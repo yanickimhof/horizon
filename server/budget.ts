@@ -440,6 +440,27 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
   // Un mois où le détail d'une carte est présent: son prélèvement sur le compte ne compte pas deux fois.
   const cardMonths = new Set(rows.filter((r) => kinds.get(r.account)?.kind === 'card').map((r) => r.date.slice(0, 7)));
 
+  // Un même émetteur (régie) verse parfois bien par bien, parfois en bloc: la répartition connue du dernier mois détaillé sert à répartir les versements en bloc.
+  const rentShares = (() => {
+    const perPayer = new Map<string, Map<string, Record<string, number>>>();
+    for (const r of rows) {
+      if (r.category !== 'revenu' || r.amount <= 0 || !r.bien) continue;
+      const pk = payeeKey(r.label);
+      const months = perPayer.get(pk) ?? new Map<string, Record<string, number>>();
+      const m = months.get(r.date.slice(0, 7)) ?? {};
+      m[r.bien] = (m[r.bien] ?? 0) + toChf(r.amount, r.currency);
+      months.set(r.date.slice(0, 7), m);
+      perPayer.set(pk, months);
+    }
+    const out = new Map<string, Record<string, number>>();
+    for (const [pk, months] of perPayer) {
+      const detailed = [...months.entries()].filter(([, v]) => Object.keys(v).length >= 2).sort((a, b) => b[0].localeCompare(a[0]))[0];
+      if (!detailed) continue;
+      const total = Object.values(detailed[1]).reduce((t, v) => t + v, 0);
+      out.set(pk, Object.fromEntries(Object.entries(detailed[1]).map(([k, v]) => [k, v / total])));
+    }
+    return out;
+  })();
   const currentMonth = now.toISOString().slice(0, 7);
   const byMonth = new Map<string, BudgetMonth>();
   let unknownCount = 0;
@@ -460,9 +481,17 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
       if ((r.category === 'logement' || r.category === 'travaux') && chf < 0) b.charges += -chf;
       if (r.category === 'revenu' && chf > 0) b.loyers += chf;
     } else if (r.category === 'revenu' && chf > 0 && /loyer|g[ée]rance|r[ée]gie|immobili|versement disponible|mietzins|verwaltung/i.test(r.label)) {
-      // Un loyer reçu d'une régie: compté dans l'immobilier même si aucun bien n'a encore été désigné.
-      const b = (e.immo['Non réparti'] = e.immo['Non réparti'] ?? { loyers: 0, charges: 0 });
-      b.loyers += chf;
+      // Un loyer reçu d'une régie: réparti selon ses versements détaillés, sinon compté à part tant qu'aucun bien n'est désigné.
+      const shares = rentShares.get(payeeKey(r.label));
+      if (shares) {
+        for (const [bien, part] of Object.entries(shares)) {
+          const b = (e.immo[bien] = e.immo[bien] ?? { loyers: 0, charges: 0 });
+          b.loyers += chf * part;
+        }
+      } else {
+        const b = (e.immo['Non réparti'] = e.immo['Non réparti'] ?? { loyers: 0, charges: 0 });
+        b.loyers += chf;
+      }
     }
     const minorUnknown = r.category === 'inconnu' && r.amount < 0 && (unkTotals.get(signatureKey(r.label, r.amount)) ?? 0) < 30;
     if (minorUnknown) {

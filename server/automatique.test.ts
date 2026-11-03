@@ -113,3 +113,16 @@ describe('biens saisis par l’utilisateur', () => {
     expect(() => setBiens(l, [{ re: '(', bien: 'X' }])).toThrow(/Motif invalide/);
   });
 });
+
+describe('versements de loyer en bloc', () => {
+  it('sont répartis selon la répartition détaillée du même émetteur', () => {
+    const l = new Ledger(':memory:');
+    storeStatements(l, [stmt('Loyer', [['2026-01-20', 'REGIE EXEMPLE SA, Lausanne Loyer studio', 1000], ['2026-01-20', 'REGIE EXEMPLE SA, Lausanne Loyer villa', 3000], ['2025-12-09', 'REGIE EXEMPLE SA, Lausanne Versement disponible', 4000]])], 'l.csv');
+    setBiens(l, [{ re: 'studio', bien: 'Studio' }, { re: 'villa', bien: 'Villa' }]);
+    const v = budgetView(l, new Date('2026-03-01'));
+    const dec = v.months.find((m) => m.month === '2025-12')!;
+    expect(Math.round(dec.immo.Studio.loyers)).toBe(1000);
+    expect(Math.round(dec.immo.Villa.loyers)).toBe(3000);
+    expect(dec.immo['Non réparti']).toBeUndefined();
+  });
+});
