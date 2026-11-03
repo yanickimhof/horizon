@@ -31,6 +31,7 @@ export interface State {
   watch: { dirs: string[]; auto: boolean; last: WatchStatus | null; running: boolean; step: string };
   budget: BudgetView;
   recurring: RecurringView;
+  decomptes: Decompte[];
   docs: { chunks: number; sources: number };
   empty: boolean;
   snapshot: Snapshot;
@@ -193,3 +194,5 @@ export interface Line { date: string; amount: number; account: string; text: str
 export interface OneOff { label: string; date: string; amount: number; category: string; bien: string | null; text: string }
 export interface CategoryMove { category: string; perYear: number; trend: number; delta: number }
 export interface RecurringView { categories: CategoryMove[]; months: string[]; comparedMonths: number; income: number; recurring: RecurringItem[]; merchants: Merchant[]; oneOffs: OneOff[]; totals: { recurring: number; daily: number; exceptional: number } }
+
+export interface Decompte { bien: string | null; from: string; to: string; total: number; lines: { label: string; amount: number }[]; solde: number | null; paid: number }

@@ -4,6 +4,7 @@ import { budgetView, labelTransactions, setBiens, storeStatements } from './budg
 import { loadDemoBudget } from './demo-budget';
 import { recurringView } from './recurring';
 import { supplierOf } from './supplier';
+import { decomptesView, parseDecompte } from './decompte';
 import { classify, isGenericPayee, signatureKey, type ParsedStatement } from './statements';
 
 const stmt = (account: string, rows: [string, string, number][]): ParsedStatement => ({
@@ -197,5 +198,27 @@ describe('noms de fournisseurs choisis', () => {
     l.setSetting('budget.fournisseurs', JSON.stringify([{ re: 'l[ée]a exemple', name: 'Argent de poche, Léa' }]));
     const v = recurringView(l, new Date('2026-10-15'));
     expect(v.recurring.map((r) => r.label)).toContain('Argent de poche, Léa');
+  });
+});
+
+describe('décompte annuel de copropriété', () => {
+  const doc = "Gérance SA Décompte de copropriété du 01.04.2025 au 31.03.2026 présente un solde en votre faveur de Fr. -555.25. Ce montant sera viré. PPE Les Cèdres 7A - Charges fiscales - Exercice du 01.04.2025 au 31.03.2026 Nous détaillons les frais déductibles fiscalement relatifs à votre part de copropriété. Recettes de buanderie  -46.55Conciergerie  731.60Electricité  214.00Honoraires d'administration  871.85Assurances  467.90TOTAL  2238.80 Nous demeurons à votre disposition.";
+  it('lit les rubriques et le total', () => {
+    const [d] = parseDecompte(doc);
+    expect(d.from).toBe('2025-04-01');
+    expect(d.lines.map((x) => x.label)).toEqual(['Recettes de buanderie', 'Conciergerie', 'Electricité', "Honoraires d'administration", 'Assurances']);
+    expect(d.total).toBe(2238.8);
+    expect(d.lines.reduce((s, x) => s + x.amount, 0)).toBeCloseTo(d.total, 2);
+  });
+  it('rapproche le décompte des versements à la PPE et du solde', () => {
+    const l = new Ledger(':memory:');
+    l.raw.prepare("INSERT INTO sources (id, kind, name, added_at) VALUES ('s1', 'doc', 'decompte.pdf', '2026-06-01')").run();
+    l.indexChunks('s1', [doc]);
+    storeStatements(l, [stmt('Compte', [['2025-07-01', 'PPE LES CEDRES 7 A, p.a. Gérance SA, 1040 Echallens', -2000], ['2026-01-05', 'PPE LES CEDRES 7 A, p.a. Gérance SA, 1040 Echallens', -2000]])], 'c.csv');
+    setBiens(l, [{ re: 'c[èe]dres', bien: 'Cèdres' }]);
+    const [d] = decomptesView(l);
+    expect(d.bien).toBe('Cèdres');
+    expect(d.paid).toBe(4000);
+    expect(d.solde).toBeCloseTo(555.25, 2);
   });
 });
