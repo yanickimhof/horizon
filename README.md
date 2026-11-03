@@ -56,7 +56,7 @@ Captures prises sur des données de démonstration inventées (famille fictive c
 
 ![Immobilier par bien](docs/screenshots/immobilier.jpg)
 
-- **Budget** (accueil): ce qui reste par mois, et la répartition des sorties en trois: ce qui revient (hypothèque, assurances, leasings, abonnements, classés par coût annuel), le quotidien (commerçants) et l'exceptionnel (impôts, travaux, grosses dépenses). Chaque fournisseur est comparé à lui-même sur la même durée un an plus tôt (onglet Évolution), avec les dépenses à comparer ou renégocier. L'onglet Immobilier détaille loyers, charges et net par bien. L'icône dossier ouvre les documents, les lignes à identifier, tes biens et les dépenses hors relevés.
+- **Budget** (accueil): ce qui reste par mois, la répartition des sorties en trois (ce qui revient, le quotidien, l'exceptionnel) et cinq onglets. Chaque ligne s'ouvre sur ses paiements et peut être renommée ou reclassée. Un menu choisit la période (12 mois, une année à ce jour, un mois); les variations comparent les mêmes mois d'une année à l'autre. L'onglet Immobilier détaille loyers, charges et net par bien, avec le décompte annuel de copropriété quand il est dans le dossier. L'icône dossier ouvre les documents, les lignes à identifier, les noms choisis et tes biens.
 - **Importer**: lit un dossier ou des fichiers, masque les identifiants.
 - **À valider**: faits proposés par la lecture des documents, en attente de ton accord.
 - **Données**: tout ce qui est connu, modifiable, avec historique.
