@@ -22,6 +22,8 @@ export interface Decompte {
   solde: number | null;
   /** Versé à la PPE sur l'exercice, d'après les relevés. */
   paid: number;
+  /** Date du versement où le solde a été déduit (un appel de charges réduit du solde), si on la retrouve. */
+  settled: string | null;
 }
 
 const iso = (d: string) => `${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(0, 2)}`;
@@ -74,7 +76,7 @@ export function decomptesView(l: Ledger): Decompte[] {
     const bien = rules.find((r) => new RegExp(r.re, 'i').test(text))?.bien ?? null;
     for (const d of parseDecompte(text)) {
       const key = `${bien}|${d.from}|${d.to}`;
-      if (!byKey.has(key)) byKey.set(key, { bien, from: d.from, to: d.to, total: d.total, lines: d.lines, solde: null, paid: 0 });
+      if (!byKey.has(key)) byKey.set(key, { bien, from: d.from, to: d.to, total: d.total, lines: d.lines, solde: null, paid: 0, settled: null });
     }
     for (const x of parseSolde(text)) soldes.push({ ...x, bien });
   }
@@ -82,6 +84,12 @@ export function decomptesView(l: Ledger): Decompte[] {
   const list = [...byKey.values()];
   for (const d of list) {
     d.solde = soldes.find((x) => x.from === d.from && x.to === d.to && (x.bien === d.bien || x.bien === null || d.bien === null))?.solde ?? null;
+    // Un solde à recevoir est le plus souvent déduit du prochain appel de charges: un versement vaut un autre moins le solde.
+    if (d.solde !== null && d.solde > 0) {
+      const after = txs.filter((t) => t.date > d.to && (d.bien === null || t.bien === d.bien));
+      const hit = after.find((a) => after.some((b) => b !== a && Math.abs(-b.amount - -a.amount - d.solde!) < 0.06));
+      d.settled = hit?.date ?? null;
+    }
     d.paid = txs.filter((t) => t.date >= d.from && t.date <= d.to && (d.bien === null || t.bien === d.bien)).reduce((s, t) => s - t.amount, 0);
   }
   return list.sort((a, b) => b.to.localeCompare(a.to));

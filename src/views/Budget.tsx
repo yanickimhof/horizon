@@ -411,7 +411,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                             {dec.paid > 0 ? <li><span>Versé à la PPE</span><b>{money(dec.paid)}</b></li> : null}
                             <li><span>Charges de l’exercice</span><b>{money(dec.total)}</b></li>
                             {dec.paid > dec.total ? <li><span>Chauffage, provisions et fonds de rénovation</span><b>{money(dec.paid - dec.total)}</b></li> : null}
-                            {dec.solde !== null ? <li className="net"><span>{dec.solde >= 0 ? 'À recevoir' : 'À payer'}</span><b>{money(Math.abs(dec.solde))}</b></li> : null}
+                            {dec.solde !== null ? <li className="net"><span>{dec.solde < 0 ? 'À payer' : dec.settled ? `Solde déduit du versement du ${dateFr(dec.settled)}` : 'À recevoir'}</span><b>{money(Math.abs(dec.solde))}</b></li> : null}
                           </ul>
                           <ul className="mini sm">
                             {dec.lines.map((ln, i) => <li key={i}><span>{ln.label}</span><b>{money(ln.amount)}</b></li>)}

@@ -214,11 +214,12 @@ describe('décompte annuel de copropriété', () => {
     const l = new Ledger(':memory:');
     l.raw.prepare("INSERT INTO sources (id, kind, name, added_at) VALUES ('s1', 'doc', 'decompte.pdf', '2026-06-01')").run();
     l.indexChunks('s1', [doc]);
-    storeStatements(l, [stmt('Compte', [['2025-07-01', 'PPE LES CEDRES 7 A, p.a. Gérance SA, 1040 Echallens', -2000], ['2026-01-05', 'PPE LES CEDRES 7 A, p.a. Gérance SA, 1040 Echallens', -2000]])], 'c.csv');
+    storeStatements(l, [stmt('Compte', [['2025-07-01', 'PPE LES CEDRES 7 A, p.a. Gérance SA, 1040 Echallens', -2000], ['2026-01-05', 'PPE LES CEDRES 7 A, p.a. Gérance SA, 1040 Echallens', -2000], ['2026-04-10', 'PPE LES CEDRES 7 A, p.a. Gérance SA, 1040 Echallens', -2000], ['2026-06-12', 'PPE LES CEDRES 7 A, p.a. Gérance SA, 1040 Echallens', -1444.75]])], 'c.csv');
     setBiens(l, [{ re: 'c[èe]dres', bien: 'Cèdres' }]);
     const [d] = decomptesView(l);
     expect(d.bien).toBe('Cèdres');
     expect(d.paid).toBe(4000);
     expect(d.solde).toBeCloseTo(555.25, 2);
+    expect(d.settled).toBe('2026-06-12');
   });
 });
