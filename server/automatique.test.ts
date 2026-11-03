@@ -202,12 +202,12 @@ describe('noms de fournisseurs choisis', () => {
 });
 
 describe('décompte annuel de copropriété', () => {
-  const doc = "Gérance SA Décompte de copropriété du 01.04.2025 au 31.03.2026 présente un solde en votre faveur de Fr. -555.25. Ce montant sera viré. PPE Les Cèdres 7A - Charges fiscales - Exercice du 01.04.2025 au 31.03.2026 Nous détaillons les frais déductibles fiscalement relatifs à votre part de copropriété. Recettes de buanderie  -46.55Conciergerie  731.60Electricité  214.00Honoraires d'administration  871.85Assurances  467.90TOTAL  2238.80 Nous demeurons à votre disposition.";
+  const doc = "Gérance SA Décompte de copropriété du 01.04.2025 au 31.03.2026 présente un solde en votre faveur de Fr. -555.25. Ce montant sera viré. PPE Les Cèdres 7A - Charges fiscales - Exercice du 01.04.2025 au 31.03.2026 Nous détaillons les frais déductibles fiscalement relatifs à votre part de copropriété. Recettes de buanderie -46.55 Conciergerie 731.60 Electricité 214.00 Honoraires d'administration 871.85 Frais parcelle 2104 - strate 3 647.45 Assurances 467.90 TOTAL 2886.25 Nous demeurons à votre disposition.";
   it('lit les rubriques et le total', () => {
     const [d] = parseDecompte(doc);
     expect(d.from).toBe('2025-04-01');
-    expect(d.lines.map((x) => x.label)).toEqual(['Recettes de buanderie', 'Conciergerie', 'Electricité', "Honoraires d'administration", 'Assurances']);
-    expect(d.total).toBe(2238.8);
+    expect(d.lines.map((x) => x.label)).toEqual(['Recettes de buanderie', 'Conciergerie', 'Electricité', "Honoraires d'administration", 'Frais parcelle 2104 - strate 3', 'Assurances']);
+    expect(d.total).toBe(2886.25);
     expect(d.lines.reduce((s, x) => s + x.amount, 0)).toBeCloseTo(d.total, 2);
   });
   it('rapproche le décompte des versements à la PPE et du solde', () => {
