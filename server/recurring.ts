@@ -160,7 +160,8 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   })();
   const aliasOf = (label: string) => aliases.find((a) => new RegExp(a.re, 'i').test(label));
   const spend = rows
-    .filter((r) => r.amount < 0 && !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))))
+    // Les remboursements (assurance, impôts, achats retournés) sont gardés: ils viennent en déduction du même fournisseur.
+    .filter((r) => !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))))
     .map((r) => {
       const hit = aliasOf(r.label);
       return hit?.category ? { ...r, category: hit.category } : r;

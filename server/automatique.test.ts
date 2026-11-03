@@ -223,3 +223,17 @@ describe('décompte annuel de copropriété', () => {
     expect(d.settled).toBe('2026-06-12');
   });
 });
+
+describe('remboursements', () => {
+  it('viennent en déduction du fournisseur concerné', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    for (let i = 1; i <= 6; i++) rows.push([`2026-0${i}-05`, 'Assurance Exemple AG, Lausanne Prime', -500]);
+    rows.push(['2026-03-20', 'Assurance Exemple AG, Lausanne Remboursement', 300]);
+    storeStatements(l, [stmt('Compte', rows)], 'c.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'assurances'");
+    const v = recurringView(l, new Date('2026-08-15'), '2026');
+    const a = v.recurring.find((r) => r.label.startsWith('Assurance'))!;
+    expect(Math.round(a.perYear)).toBe(2700);
+  });
+});
