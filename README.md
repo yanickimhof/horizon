@@ -54,7 +54,7 @@ Captures prises sur des données de démonstration inventées (famille fictive c
 
 ![Tout voir: catégories, immobilier, travaux](docs/screenshots/depenses-par-categorie.jpg)
 
-- **Budget** (accueil): un chiffre (ce qui reste par mois) et les cinq plus grosses dépenses. « Tout voir » ouvre les catégories (par mois ou en total, avec variation à période égale), l'immobilier et les travaux par bien. L'icône dossier ouvre les documents, les lignes à identifier, tes biens et les dépenses hors relevés. Période: un petit menu en haut.
+- **Budget** (accueil): un chiffre (ce qui reste par mois) et trois constats écrits par l’outil (premier poste, plus gros changement, ce qui est à confirmer). « Voir où va l’argent » ouvre un schéma de flux des revenus vers les dépenses (un toucher donne le montant), puis les catégories et les biens. L’icône dossier ouvre les documents, les lignes à identifier, tes biens et les dépenses hors relevés. Période: un petit menu en haut.
 - **Importer**: lit un dossier ou des fichiers, masque les identifiants.
 - **À valider**: faits proposés par la lecture des documents, en attente de ton accord.
 - **Données**: tout ce qui est connu, modifiable, avec historique.
