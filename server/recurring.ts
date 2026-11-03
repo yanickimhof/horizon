@@ -27,6 +27,8 @@ export interface RecurringItem {
   delta: number | null;
   /** Montant de la même période un an plus tôt (null si les relevés ne remontent pas assez loin). */
   prior: number | null;
+  /** Montant sur les mêmes mois cette année: c'est lui qu'on compare à `prior`. */
+  now: number | null;
   /** Une dépense qu'on peut renégocier ou résilier (assurance, télécom, abonnement, frais). */
   lever: boolean;
   /** Les paiements les plus récents de la période, tels que la banque les écrit. */
@@ -49,6 +51,7 @@ export interface Merchant {
   trend: number | null;
   delta: number | null;
   prior: number | null;
+  now: number | null;
   lines: Line[];
 }
 
@@ -86,7 +89,9 @@ export interface RecurringView {
   /** Versements uniques non comptés dans les gains (vente, indemnité). */
   incomeOnce: number;
   /** Gains et dépenses de la même période un an plus tôt, ramenés à la même durée (null si l'historique manque). */
-  compare: { income: number | null; spend: number | null };
+  compare: { income: number | null; spend: number | null; incomeNow: number | null; spendNow: number | null };
+  /** Les mois de la période qui ont un jumeau un an plus tôt: ce sont eux, et eux seuls, qui servent aux comparaisons. */
+  pairMonths: string[];
   recurring: RecurringItem[];
   merchants: Merchant[];
   oneOffs: OneOff[];
@@ -138,7 +143,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
 
   const all = [...new Set(rows.map((r) => r.date.slice(0, 7)))].filter((m) => m < current).sort();
   const last = all[all.length - 1];
-  const empty: RecurringView = { categories: [], works: [], months: [], comparedMonths: 0, priorMonths: [], income: 0, incomeBy: [], incomeOnce: 0, compare: { income: null, spend: null }, recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0, works: 0 } };
+  const empty: RecurringView = { categories: [], works: [], months: [], comparedMonths: 0, priorMonths: [], income: 0, incomeBy: [], incomeOnce: 0, compare: { income: null, spend: null, incomeNow: null, spendNow: null }, pairMonths: [], recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0, works: 0 } };
   if (!last) return empty;
   // La période choisie: 12 derniers mois, une année (à ce jour si elle n'est pas finie) ou un mois.
   const range = period.match(/^(\d{4}-\d{2})\.\.(\d{4}-\d{2})$/);
@@ -251,12 +256,14 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     const prior = priorCovered ? sum(g.rows, inPairPrior) : null;
     const now12 = priorCovered ? sum(g.rows, inPair) : 0;
     const trend = prior !== null && prior > 50 ? now12 / prior - 1 : null;
-    const delta = prior !== null && prior > 50 ? (now12 - prior) * scale : null;
-    const priorScaled = prior !== null && prior > 50 ? prior * scale : null;
+    // Les comparaisons se font sur les mêmes mois, sans extrapolation: ce qu'on compare est exactement ce qui est écrit.
+    const delta = prior !== null && prior > 50 ? now12 - prior : null;
+    const priorScaled = prior !== null && prior > 50 ? prior : null;
+    const nowPair = prior !== null && prior > 50 ? now12 : null;
     const bien = chosen.find((r) => r.bien)?.bien ?? null;
 
     if (isFixed || isStable || isAnnual) {
-      recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, prior: priorScaled, lever: LEVER.has(category), lines: toLines(chosen) });
+      recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, prior: priorScaled, now: nowPair, lever: LEVER.has(category), lines: toLines(chosen) });
       totals.recurring += amount;
       continue;
     }
@@ -281,7 +288,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       }
     }
     totals.daily += dailyTotal;
-    if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: dailyRows.length, trend, delta, prior: priorScaled, lines: toLines(dailyRows) });
+    if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: dailyRows.length, trend, delta, prior: priorScaled, now: nowPair, lines: toLines(dailyRows) });
   }
 
   // Par catégorie, pour que le passage d'un fournisseur à un autre ne passe pas pour une baisse ou une hausse.
@@ -300,8 +307,8 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     for (const [category, c] of byCat) {
       if (c.prior < 200) continue;
       const trend = c.now / c.prior - 1;
-      const delta = (c.now - c.prior) * scale;
-      if (Math.abs(trend) >= 0.1 && Math.abs(delta) >= 300 * Math.min(1, sel.length / 12)) categories.push({ category, perYear: c.year, trend, delta, prior: c.prior * scale });
+      const delta = c.now - c.prior;
+      if (Math.abs(trend) >= 0.1 && Math.abs(delta) >= 300 * Math.min(1, sel.length / 12)) categories.push({ category, perYear: c.now, trend, delta, prior: c.prior });
     }
     categories.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   }
@@ -334,7 +341,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       events.push({ month: m, label: incLabel(r), amount: chf, once: r.category === 'exceptionnel' });
     }
   }
-  const incMap = new Map<string, { amount: number; prior: number }>();
+  const incMap = new Map<string, { amount: number; prior: number; now: number }>();
   let income = 0;
   let incomeOnce = 0;
   for (const e of events) {
@@ -342,25 +349,29 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       if (inSel(e.month)) incomeOnce += e.amount;
       continue;
     }
-    const k = incMap.get(e.label) ?? { amount: 0, prior: 0 };
+    const k = incMap.get(e.label) ?? { amount: 0, prior: 0, now: 0 };
     if (inSel(e.month)) {
       k.amount += e.amount;
       income += e.amount;
     }
-    if (inPairPrior(e.month)) k.prior += e.amount * scale;
+    if (inPairPrior(e.month)) k.prior += e.amount;
+    if (inPair(e.month)) k.now += e.amount;
     incMap.set(e.label, k);
   }
   const incList = [...incMap.entries()].filter(([, v]) => v.amount > 0 || v.prior > 0).map(([label, v]) => ({ label, amount: v.amount, prior: priorCovered ? v.prior : null })).sort((a, b) => b.amount - a.amount);
   const incomeBy = incList.length > 4 ? [...incList.slice(0, 4), { label: 'Autres', amount: incList.slice(4).reduce((t, x) => t + x.amount, 0), prior: priorCovered ? incList.slice(4).reduce((t, x) => t + (x.prior ?? 0), 0) : null }] : incList;
+  const sumSpend = (f: (m: string) => boolean) => spend.filter((r) => f(r.date.slice(0, 7))).reduce((t, r) => t - toChf(r.amount, r.currency), 0);
   const compare = {
     income: priorCovered ? incList.reduce((t, x) => t + (x.prior ?? 0), 0) : null,
-    spend: priorCovered ? spend.filter((r) => inPairPrior(r.date.slice(0, 7))).reduce((t, r) => t - toChf(r.amount, r.currency), 0) * scale : null,
+    spend: priorCovered ? sumSpend(inPairPrior) : null,
+    incomeNow: priorCovered ? [...incMap.values()].reduce((t, x) => t + x.now, 0) : null,
+    spendNow: priorCovered ? sumSpend(inPair) : null,
   };
   recurring.sort((a, b) => b.perYear - a.perYear);
   merchants.sort((a, b) => b.total - a.total);
   oneOffs.sort((a, b) => b.amount - a.amount);
   works.sort((a, b) => b.amount - a.amount);
-  return { categories: categories.slice(0, 8), works, months, comparedMonths: priorCovered ? pairMonths.length : 0, priorMonths: priorCovered ? [...priorSet].sort() : [], income, incomeBy, incomeOnce, compare, recurring, merchants, oneOffs, totals };
+  return { categories: categories.slice(0, 8), works, months, comparedMonths: priorCovered ? pairMonths.length : 0, priorMonths: priorCovered ? [...priorSet].sort() : [], pairMonths: priorCovered ? pairMonths : [], income, incomeBy, incomeOnce, compare, recurring, merchants, oneOffs, totals };
 }
 
 export interface Fournisseur {
