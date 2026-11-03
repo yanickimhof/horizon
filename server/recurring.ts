@@ -1,5 +1,5 @@
 import type { Ledger } from './ledger';
-import { isGenericPayee, normalizeLabel, payeeName } from './statements';
+import { isGenericPayee, normalizeLabel } from './statements';
 import { rateFor } from '../src/engine/fx';
 
 /**
@@ -67,6 +67,8 @@ interface Row {
 }
 
 const NOT_SPEND = new Set(['interne', 'epargne', 'revenu', 'exceptionnel', 'doublon']);
+// Un montant qui varie beaucoup d'un mois à l'autre (intérêts semestriels, primes) reste un engagement pour ces catégories.
+const LOOSE = new Set(['logement', 'assurances', 'energie', 'telecom', 'banque']);
 const FIXED = new Set(['logement', 'assurances', 'energie', 'telecom', 'abonnements', 'banque', 'vehicule', 'enfants', 'famille']);
 const LEVER = new Set(['assurances', 'telecom', 'abonnements', 'banque', 'energie']);
 const ONE_OFF_CATEGORIES = new Set(['impots', 'travaux']);
@@ -114,7 +116,7 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
   const income = rows.filter((r) => r.category === 'revenu' && r.amount > 0 && inWindow(r.date.slice(0, 7))).reduce((t, r) => t + toChf(r.amount, r.currency), 0);
 
   // Un fournisseur: son nom, sauf libellé générique (« Paiement », « Débit LSV »), où le début du libellé complet fait foi.
-  const keyOf = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : payeeName(r.label));
+  const keyOf = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : normalizeLabel(r.label.split(',').slice(0, 2).join(' ')).slice(0, 44));
   type G = { key: string; label: string; rows: Row[]; cat: Map<string, number> };
   const groups = new Map<string, G>();
   for (const r of spend) {
@@ -123,6 +125,12 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     g.rows.push(r);
     g.cat.set(r.category, (g.cat.get(r.category) ?? 0) + Math.abs(toChf(r.amount, r.currency)));
     groups.set(k, g);
+  }
+  // Deux fournisseurs de même nom (une personne, à deux adresses) se distinguent par leur adresse.
+  const firstParts = new Map<string, number>();
+  for (const g of groups.values()) firstParts.set(g.label, (firstParts.get(g.label) ?? 0) + 1);
+  for (const g of groups.values()) {
+    if ((firstParts.get(g.label) ?? 0) > 1) g.label = `${g.label}, ${g.rows[0].label.split(',')[1]?.trim().slice(0, 28) ?? ''}`.replace(/, $/, '');
   }
   const sum = (rs: Row[], f: (m: string) => boolean) => rs.filter((r) => f(r.date.slice(0, 7))).reduce((t, r) => t - toChf(r.amount, r.currency), 0);
   const topCat = (g: G) => [...g.cat.entries()].sort((a, b) => b[1] - a[1])[0][0];
@@ -144,7 +152,7 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     const mean = monthlyTotals.reduce((t, v) => t + v, 0) / monthlyTotals.length;
     const cv = mean > 0 ? Math.sqrt(monthlyTotals.reduce((t, v) => t + (v - mean) ** 2, 0) / monthlyTotals.length) / mean : 9;
     const generic = isGenericPayee(win[0].label);
-    const isFixed = !generic && FIXED.has(category) && winMonths.length >= 2 && cv <= 0.6;
+    const isFixed = !generic && FIXED.has(category) && winMonths.length >= 2 && cv <= (LOOSE.has(category) ? 2 : 0.6);
     const isStable = !generic && !ONE_OFF_CATEGORIES.has(category) && winMonths.length >= 6 && cv <= 0.15 && perMonthCount <= 1.5;
     const isAnnual = !generic && FIXED.has(category) && winMonths.length === 1 && monthsSet.some((m) => Math.abs(m - monthIndex(winMonths[0]) + 12) <= 1 || Math.abs(m - monthIndex(winMonths[0]) - 12) <= 1);
 
@@ -164,7 +172,7 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     for (const r of win) {
       const chf = -toChf(r.amount, r.currency);
       if (ONE_OFF_CATEGORIES.has(r.category) || chf >= 1500) {
-        oneOffs.push({ label: r.label.split(',')[0].trim().slice(0, 48), date: r.date, amount: chf, category: r.category, bien: r.bien });
+        oneOffs.push({ label: (isGenericPayee(r.label) ? r.label : r.label.split(',')[0]).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien });
         totals.exceptional += chf;
       } else {
         dailyTotal += chf;
