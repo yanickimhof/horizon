@@ -150,6 +150,21 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     for (const m of used) for (const [k, v] of Object.entries(m.works ?? {})) t[k] = (t[k] ?? 0) + v;
     return Object.entries(t).sort((p, q) => q[1] - p[1]);
   }, [used]);
+  const [rules, setRules] = useState<{ words: string; bien: string; home: boolean; from: string; to: string }[]>([]);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const toWords = (re: string) => re.split('|').map((x) => x.replace(/\\(.)/g, '$1')).join(', ');
+  const fromWords = (w: string) => w.split(',').map((x) => x.trim()).filter(Boolean).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  useEffect(() => {
+    setRules((b.biens ?? []).map((r) => ({ words: toWords(r.re), bien: r.bien, home: !!r.home, from: r.from ?? '', to: r.to ?? '' })));
+  }, [b.biens]);
+  const saveRules = async () => {
+    try {
+      setState(await api.post(db, 'budget/biens', { rules: rules.map((r) => ({ re: fromWords(r.words), bien: r.bien, home: r.home, from: r.from || undefined, to: r.to || undefined })) }));
+      setRulesOpen(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
   const [est, setEst] = useState({ label: '', amount: '', currency: 'CHF', per: 'month', category: 'abonnements' });
   const addEst = async () => {
     const amount = Number(est.amount.replace(',', '.'));
@@ -416,6 +431,39 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           </ul>
         </section>
       ) : null}
+
+      <section className="tile">
+        <h2>Mes biens</h2>
+        <p className="muted small">Dis à quel bien appartient un fournisseur (régie, copropriété, artisan, banque du prêt): ses loyers, charges et travaux sont alors regroupés par bien. Si un même fournisseur change de bien, ajoute une période.</p>
+        {rules.length > 0 && !rulesOpen ? (
+          <ul className="changes">
+            {rules.map((r, i) => (
+              <li key={i}><span className="name">{r.bien}{r.home ? ' (domicile)' : ''} <span className="muted small">{r.words}{r.from || r.to ? `, ${r.from || '…'} → ${r.to || '…'}` : ''}</span></span></li>
+            ))}
+          </ul>
+        ) : null}
+        {rulesOpen ? (
+          <div className="biens-form">
+            {rules.map((r, i) => (
+              <div className="est-form" key={i}>
+                <input value={r.words} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, words: e.target.value } : x)))} placeholder="Mots du libellé, séparés par une virgule" aria-label="Mots du libellé" />
+                <input value={r.bien} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, bien: e.target.value } : x)))} placeholder="Nom du bien" aria-label="Nom du bien" />
+                <input value={r.from} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)))} placeholder="Dès (AAAA-MM-JJ)" aria-label="Dès" />
+                <input value={r.to} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, to: e.target.value } : x)))} placeholder="Jusqu'à" aria-label="Jusqu'à" />
+                <label className="small"><input type="checkbox" checked={r.home} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, home: e.target.checked } : x)))} /> Mon domicile</label>
+                <button className="btn small" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Retirer</button>
+              </div>
+            ))}
+            <div className="est-form">
+              <button className="btn small" onClick={() => setRules([...rules, { words: '', bien: '', home: false, from: '', to: '' }])}>Ajouter un fournisseur</button>
+              <button className="btn" onClick={saveRules}>Enregistrer</button>
+              <button className="btn small" onClick={() => setRulesOpen(false)}>Annuler</button>
+            </div>
+          </div>
+        ) : (
+          <button className="btn small" onClick={() => { if (rules.length === 0) setRules([{ words: '', bien: '', home: false, from: '', to: '' }]); setRulesOpen(true); }}>{rules.length ? 'Modifier' : 'Ajouter un bien'}</button>
+        )}
+      </section>
 
       <section className="tile">
         <h2>Dépenses connues hors relevés</h2>

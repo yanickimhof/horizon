@@ -285,6 +285,37 @@ export function reclassify(l: Ledger): number {
  * réglage « budget.biens », liste de { re, bien, from?, to? } (dates facultatives, pour un même fournisseur qui change de bien).
  * La première règle qui reconnaît le libellé gagne.
  */
+export interface BienRule { re: string; bien: string; home?: boolean; from?: string; to?: string }
+
+export function getBiens(l: Ledger): BienRule[] {
+  try {
+    return JSON.parse(l.getSetting('budget.biens') || '[]');
+  } catch {
+    return [];
+  }
+}
+
+/** Enregistre les règles de biens (depuis l'écran), puis rattache de nouveau toutes les lignes. */
+export function setBiens(l: Ledger, rules: BienRule[]): void {
+  init(l);
+  const clean: BienRule[] = [];
+  for (const r of rules) {
+    const re = String(r.re ?? '').trim();
+    const bien = String(r.bien ?? '').trim();
+    if (!re || !bien) continue;
+    try {
+      new RegExp(re, 'i');
+    } catch {
+      throw new Error(`Motif invalide: ${re}`);
+    }
+    const date = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+    clean.push({ re, bien, ...(r.home ? { home: true } : {}), ...(date(r.from) ? { from: date(r.from) } : {}), ...(date(r.to) ? { to: date(r.to) } : {}) });
+  }
+  l.setSetting('budget.biens', JSON.stringify(clean));
+  l.raw.exec('UPDATE budget_txs SET bien = NULL');
+  tagBiens(l);
+}
+
 function tagBiens(l: Ledger): void {
   let rules: { re: string; bien: string; from?: string; to?: string }[] = [];
   try {
@@ -355,6 +386,8 @@ export interface Estimate {
 }
 
 export interface BudgetView {
+  /** Règles de biens saisies par l'utilisateur. */
+  biens: BienRule[];
   /** Biens désignés comme domicile (leurs charges ne sont pas comparées à des loyers). */
   homes: string[];
   /** Versements uniques écartés du revenu mensuel (indemnité, vente...), pour que l'utilisateur voie ce qui n'est pas compté. */
@@ -489,7 +522,7 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
     .map((r) => ({ key: signatureKey(r.label, r.amount), label: r.label, date: r.date, amount: toChf(r.amount, r.currency) }))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 6);
-  return { homes, unknownMinor, excluded, estimates, accounts, months, count: rows.length, unknown: { count: unknownCount, total: unknownTotal }, unknownSamples, currencies: [...new Set(rows.map((r) => r.currency))].sort() };
+  return { biens: getBiens(l), homes, unknownMinor, excluded, estimates, accounts, months, count: rows.length, unknown: { count: unknownCount, total: unknownTotal }, unknownSamples, currencies: [...new Set(rows.map((r) => r.currency))].sort() };
 }
 
 const CATEGORY_OK = (c: string): boolean => /^[a-z]{3,20}$/.test(c);
