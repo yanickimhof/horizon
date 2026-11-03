@@ -208,7 +208,8 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   const compact = (n: string) => normalizeLabel(n).replace(/[^a-z0-9]/g, '');
   const baseName = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name);
   const baseKey = (r: Row): string => compact(baseName(r));
-  const aliasOf = (r: Row) => aliases.find((x) => (x.re && new RegExp(x.re, 'i').test(r.label)) || (x.key && x.key === baseKey(r)));
+  // La règle la plus récente l'emporte: une correction faite aujourd'hui doit passer devant une ancienne règle plus large.
+  const aliasOf = (r: Row) => [...aliases].reverse().find((x) => (x.re && new RegExp(x.re, 'i').test(r.label)) || (x.key && x.key === baseKey(r)));
   const spend = rows
     // Les remboursements (assurance, impôts, achats retournés) sont gardés: ils viennent en déduction du même fournisseur.
     .filter((r) => !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))))
