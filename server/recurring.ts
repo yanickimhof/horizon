@@ -302,14 +302,15 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       }
       const cad = cadenceOf(monthsSet);
       const ppy = cad === 'mensuel' ? 12 : cad === 'trimestriel' ? 4 : cad === 'semestriel' ? 2 : cad === 'annuel' ? 1 : 12;
-      const need = ppy >= 12 ? 2 : 1;
+      const need = ppy >= 12 ? 3 : 2;
       const cur = runs[runs.length - 1];
       const before = runs[runs.length - 2];
-      if (cur && before && cur.n >= need && before.n >= need && winMonths.length >= 2 && cur.amount >= 5 && Math.abs(cur.amount - before.amount) >= Math.max(2, before.amount * 0.04) && monthIndex(cur.first) > end - 12) {
+      const tariffCat = LEVER.has(category) && category !== 'energie';
+      if (tariffCat && cur && before && cur.n >= need && before.n >= need && winMonths.length >= 2 && cur.amount >= 5 && cur.amount / before.amount >= 0.6 && cur.amount / before.amount <= 1.7 && Math.abs(cur.amount - before.amount) >= Math.max(2, before.amount * 0.04) && monthIndex(cur.first) > end - 12) {
         changes.push({ key: g.key, label: g.label, kind: 'prix', from: before.amount, to: cur.amount, cadence: cad, since: cur.first, yearly: (cur.amount - before.amount) * ppy });
-      } else if (runs.length === 1 && pays.length >= 2 && monthIndex(pays[0].date.slice(0, 7)) > end - 5 && cur.amount >= 5) {
+      } else if (tariffCat && runs.length === 1 && pays.length >= 3 && monthIndex(pays[0].date.slice(0, 7)) > end - 5 && cur.amount >= 5) {
         changes.push({ key: g.key, label: g.label, kind: 'nouveau', from: null, to: cur.amount, cadence: cad, since: pays[0].date.slice(0, 7), yearly: cur.amount * ppy });
-      } else if (pays.length >= 4 && ppy >= 12 && monthIndex(pays[pays.length - 1].date.slice(0, 7)) < end - 1 && monthIndex(pays[pays.length - 1].date.slice(0, 7)) > end - 12 && cur.amount >= 5) {
+      } else if (tariffCat && pays.length >= 4 && ppy >= 12 && monthIndex(pays[pays.length - 1].date.slice(0, 7)) < end - 1 && monthIndex(pays[pays.length - 1].date.slice(0, 7)) > end - 12 && cur.amount >= 5) {
         changes.push({ key: g.key, label: g.label, kind: 'arret', from: cur.amount, to: null, cadence: cad, since: pays[pays.length - 1].date.slice(0, 7), yearly: -cur.amount * ppy });
       }
       continue;
