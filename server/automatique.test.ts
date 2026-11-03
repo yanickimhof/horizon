@@ -259,3 +259,22 @@ describe('quotidien, exceptionnel et immobilier ne se recoupent pas', () => {
     expect(v.totals.works).toBe(2000);
   });
 });
+
+describe('assurance maladie: prime et participations aux soins', () => {
+  it('sépare la prime qui revient des petits paiements variables et des remboursements', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    for (let i = 1; i <= 8; i++) {
+      const m = String(i).padStart(2, '0');
+      rows.push([`2026-${m}-02`, 'Assurance Santé Exemple, Berne Prime', -1000]);
+      rows.push([`2026-${m}-12`, 'Assurance Santé Exemple, Berne Facture', -(20 + i * 7)]);
+    }
+    rows.push(['2026-05-20', 'Assurance Santé Exemple, Berne Remboursement', 120]);
+    storeStatements(l, [stmt('Compte', rows)], 'c.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'assurances'");
+    const v = recurringView(l, new Date('2026-10-15'), '2026');
+    const prime = v.recurring.find((r) => r.label === 'Assurance Santé Exemple')!;
+    expect(Math.round(prime.perYear)).toBe(8000);
+    expect(v.merchants.some((m) => /participations aux soins/.test(m.label))).toBe(true);
+  });
+});
