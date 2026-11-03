@@ -174,3 +174,17 @@
 .fixform { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
 .fixform input { flex: 1 1 180px; }
 .welcome ol { padding-left: 20px; line-height: 1.6; margin: 8px 0; }
+
+@media (max-width: 600px) {
+  .topbar { margin-bottom: 4px; }
+  .hero { margin: 4px 0 14px; }
+  .hero .big.xl { font-size: 38px; }
+  .hero .unit { font-size: 12px; }
+  .stackbar { height: 36px; }
+  .tabs { margin: 12px 0 8px; }
+  .tabs button { font-size: 10.5px; gap: 3px; padding: 6px 0 8px; }
+  .rowbtn { padding: 11px 0; }
+  .rows .n { font-size: 14px; }
+  .rows .v { font-size: 14px; }
+  .detail ul li { grid-template-columns: 54px 1fr auto; font-size: 11px; }
+}
