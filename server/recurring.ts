@@ -23,8 +23,10 @@ export interface RecurringItem {
   last: string;
   /** Variation par rapport aux 12 mois précédents (null si l'historique ne suffit pas). */
   trend: number | null;
-  /** Écart en francs sur l'année par rapport aux 12 mois précédents. */
+  /** Écart en francs par rapport à la même période un an plus tôt. */
   delta: number | null;
+  /** Montant de la même période un an plus tôt (null si les relevés ne remontent pas assez loin). */
+  prior: number | null;
   /** Une dépense qu'on peut renégocier ou résilier (assurance, télécom, abonnement, frais). */
   lever: boolean;
   /** Les paiements les plus récents de la période, tels que la banque les écrit. */
@@ -46,6 +48,7 @@ export interface Merchant {
   count: number;
   trend: number | null;
   delta: number | null;
+  prior: number | null;
   lines: Line[];
 }
 
@@ -63,11 +66,14 @@ export interface CategoryMove {
   perYear: number;
   trend: number;
   delta: number;
+  prior: number;
 }
 
 export interface RecurringView {
   /** Variations par catégorie: un changement de fournisseur (autre assurance, autre opérateur) s'y lit d'un coup. */
   categories: CategoryMove[];
+  /** Travaux et frais ponctuels d'un bien: affichés dans l'immobilier, pas dans l'exceptionnel. */
+  works: OneOff[];
   /** Les douze mois pris en compte, du plus ancien au plus récent. */
   months: string[];
   /** Nombre de mois comparés à la même période un an plus tôt (0 si l'historique manque). */
@@ -76,7 +82,7 @@ export interface RecurringView {
   recurring: RecurringItem[];
   merchants: Merchant[];
   oneOffs: OneOff[];
-  totals: { recurring: number; daily: number; exceptional: number };
+  totals: { recurring: number; daily: number; exceptional: number; works: number };
 }
 
 interface Row {
@@ -124,10 +130,11 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
 
   const all = [...new Set(rows.map((r) => r.date.slice(0, 7)))].filter((m) => m < current).sort();
   const last = all[all.length - 1];
-  const empty: RecurringView = { categories: [], months: [], comparedMonths: 0, income: 0, recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0 } };
+  const empty: RecurringView = { categories: [], works: [], months: [], comparedMonths: 0, income: 0, recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0, works: 0 } };
   if (!last) return empty;
   // La période choisie: 12 derniers mois, une année (à ce jour si elle n'est pas finie) ou un mois.
-  const pick = /^\d{4}-\d{2}$/.test(period) ? all.filter((m) => m === period) : /^\d{4}$/.test(period) ? all.filter((m) => m.startsWith(period)) : all.slice(-12);
+  const range = period.match(/^(\d{4}-\d{2})\.\.(\d{4}-\d{2})$/);
+  const pick = range ? all.filter((m) => m >= range[1] && m <= range[2]) : /^\d{4}-\d{2}$/.test(period) ? all.filter((m) => m === period) : /^\d{4}$/.test(period) ? all.filter((m) => m.startsWith(period)) : all.slice(-12);
   const sel = pick.length > 0 ? pick : all.slice(-12);
   const end = monthIndex(sel[sel.length - 1]);
   // Ce qui est « récurrent » se juge sur les douze mois qui finissent avec la période, quelle que soit sa longueur.
@@ -196,7 +203,8 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   const recurring: RecurringItem[] = [];
   const merchants: Merchant[] = [];
   const oneOffs: OneOff[] = [];
-  const totals = { recurring: 0, daily: 0, exceptional: 0 };
+  const works: OneOff[] = [];
+  const totals = { recurring: 0, daily: 0, exceptional: 0, works: 0 };
 
   for (const g of groups.values()) {
     const win = g.rows.filter((r) => inCls(r.date.slice(0, 7)));
@@ -222,26 +230,36 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     const now12 = priorCovered ? sum(g.rows, inPair) : 0;
     const trend = prior !== null && prior > 50 ? now12 / prior - 1 : null;
     const delta = prior !== null && prior > 50 ? (now12 - prior) * scale : null;
+    const priorScaled = prior !== null && prior > 50 ? prior * scale : null;
     const bien = chosen.find((r) => r.bien)?.bien ?? null;
 
     if (isFixed || isStable || isAnnual) {
-      recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, lever: LEVER.has(category), lines: toLines(chosen) });
+      recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, prior: priorScaled, lever: LEVER.has(category), lines: toLines(chosen) });
       totals.recurring += amount;
       continue;
     }
-    // Le reste: une grosse dépense unique ou un impôt est exceptionnel, le reste est du quotidien.
+    // Le reste. Un travail ou un frais lié à un bien va dans l'immobilier. Un impôt ou une grosse dépense inhabituelle est exceptionnel.
+    // Un commerçant fréquenté au moins quatre mois est du quotidien: seule une très grosse dépense en sort.
+    const regular = winMonths.length >= 4;
+    const limit = regular ? 1000 : 300;
     let dailyTotal = 0;
+    const dailyRows: Row[] = [];
     for (const r of chosen) {
       const chf = -toChf(r.amount, r.currency);
-      if (ONE_OFF_CATEGORIES.has(r.category) || chf >= 1500) {
-        oneOffs.push({ label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien, text: r.label.replace(/\s+/g, ' ').slice(0, 110) });
+      const entry = { label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien, text: r.label.replace(/\s+/g, ' ').slice(0, 110) };
+      if (r.bien || r.category === 'travaux') {
+        works.push(entry);
+        totals.works += chf;
+      } else if (r.category === 'impots' || chf >= limit) {
+        oneOffs.push(entry);
         totals.exceptional += chf;
       } else {
         dailyTotal += chf;
+        dailyRows.push(r);
       }
     }
     totals.daily += dailyTotal;
-    if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: chosen.length, trend, delta, lines: toLines(chosen.filter((r) => !(ONE_OFF_CATEGORIES.has(r.category) || -toChf(r.amount, r.currency) >= 1500))) });
+    if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: dailyRows.length, trend, delta, prior: priorScaled, lines: toLines(dailyRows) });
   }
 
   // Par catégorie, pour que le passage d'un fournisseur à un autre ne passe pas pour une baisse ou une hausse.
@@ -261,14 +279,15 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       if (c.prior < 200) continue;
       const trend = c.now / c.prior - 1;
       const delta = (c.now - c.prior) * scale;
-      if (Math.abs(trend) >= 0.1 && Math.abs(delta) >= 300 * Math.min(1, sel.length / 12)) categories.push({ category, perYear: c.year, trend, delta });
+      if (Math.abs(trend) >= 0.1 && Math.abs(delta) >= 300 * Math.min(1, sel.length / 12)) categories.push({ category, perYear: c.year, trend, delta, prior: c.prior * scale });
     }
     categories.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   }
   recurring.sort((a, b) => b.perYear - a.perYear);
   merchants.sort((a, b) => b.total - a.total);
   oneOffs.sort((a, b) => b.amount - a.amount);
-  return { categories: categories.slice(0, 8), months, comparedMonths: priorCovered ? pairMonths.length : 0, income, recurring, merchants, oneOffs, totals };
+  works.sort((a, b) => b.amount - a.amount);
+  return { categories: categories.slice(0, 8), works, months, comparedMonths: priorCovered ? pairMonths.length : 0, income, recurring, merchants, oneOffs, totals };
 }
 
 export interface Fournisseur {

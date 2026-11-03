@@ -188,3 +188,24 @@
   .rows .v { font-size: 14px; }
   .detail ul li { grid-template-columns: 54px 1fr auto; font-size: 11px; }
 }
+
+.timeline { margin: 4px 0 18px; }
+.tlbars { display: flex; gap: 3px; height: 54px; align-items: flex-end; }
+.tlbars button { all: unset; box-sizing: border-box; flex: 1; height: 100%; display: flex; align-items: flex-end; cursor: pointer; }
+.tlbars button i { display: block; width: 100%; border-radius: 3px; background: rgba(0,0,0,.12); transition: background .15s; }
+.tlbars button:hover i { background: rgba(0,0,0,.25); }
+.tlbars button.on i { background: #534AB7; }
+.tlyears { display: flex; gap: 3px; margin-top: 4px; font-size: 11px; color: var(--ink-2); }
+.tlyears span { flex: 1; min-width: 0; }
+.tlyears button { all: unset; cursor: pointer; white-space: nowrap; }
+.tlyears button:hover { color: var(--ink); text-decoration: underline; }
+.tllabel { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 13px; color: var(--ink-2); }
+.tllabel button { all: unset; cursor: pointer; padding: 3px 10px; border-radius: 999px; background: rgba(0,0,0,.05); font-size: 12px; }
+.tllabel button.on { background: var(--ink); color: var(--bg, #fff); }
+.listtools { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 6px; }
+.listtools .seg button { padding: 4px 10px; font-size: 12px; }
+.chg { display: block; font-size: 12px; margin-top: 2px; }
+.chg.up { color: #c4452d; } .chg.down { color: #2f7d4f; }
+.delta { font-variant-numeric: tabular-nums; font-size: 15px; }
+.delta.up { color: #c4452d; } .delta.down { color: #2f7d4f; }
+.rows.sub { margin: 0 0 8px 14px; border-left: 2px solid var(--line, rgba(0,0,0,.08)); padding-left: 10px; }
