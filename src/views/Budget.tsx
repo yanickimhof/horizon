@@ -424,7 +424,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       </div>
       <div className="tlyears">
         {tl.map((m, i) => (
-          <span key={m.month}>{m.month.slice(5) === '01' || i === 0 ? <button onClick={() => { setPeriod(m.month.slice(0, 4)); setOpen(''); setMore(false); }}>{m.month.slice(0, 4)}</button> : null}</span>
+          <span key={m.month}>{m.month.slice(5) === '01' || (i === 0 && (tl.findIndex((x) => x.month.slice(5) === '01') < 0 || tl.findIndex((x) => x.month.slice(5) === '01') >= 4)) ? <button onClick={() => { setPeriod(m.month.slice(0, 4)); setOpen(''); setMore(false); }}>{m.month.slice(0, 4)}</button> : null}</span>
         ))}
       </div>
       <div className="tllabel">
