@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { ArrowDownRight, ArrowLeft, ArrowUpRight, FolderOpen } from 'lucide-react';
 import { api, fmt, type Db, type State, type WatchStatus } from '../api';
 import '../budget.css';
 
@@ -55,11 +55,13 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const full = useMemo(() => b.months.filter((m) => !m.partial), [b.months]);
   const last = full[full.length - 1];
   const [period, setPeriod] = useState('12');
+  const [view, setView] = useState<'home' | 'todo'>(full.length > 0 ? 'home' : 'todo');
+  const [sel, setSel] = useState('');
   const years = useMemo(() => [...new Set(full.filter((m) => m.spend > 0).map((m) => m.month.slice(0, 4)))].filter((y) => full.filter((m) => m.month.startsWith(y) && m.spend > 0).length >= 6).sort().reverse(), [full]);
   const yearOk = period === '12' || years.includes(period);
-  const used = period === '12' || !yearOk ? full.slice(-12) : full.filter((m) => m.month.startsWith(period));
+  const used = period === 'm' ? full.slice(-1) : period === '12' || !yearOk ? full.slice(-12) : full.filter((m) => m.month.startsWith(period));
   const prevYear = period !== '12' && yearOk ? full.filter((m) => m.month.startsWith(String(Number(period) - 1))) : [];
-  const periodLabel = period === '12' || !yearOk ? `${used.length} derniers mois` : `${used.length} mois de ${period}`;
+  const periodLabel = period === 'm' && last ? monthName(last.month) : period === '12' || !yearOk ? `${used.length} derniers mois` : `${used.length} mois de ${period}`;
   // Une dépense payée une année mais qui appartient à une autre (solde d'impôts) suit son année dans la vue par année.
   const adj = useMemo(() => {
     const byCat: Record<string, number> = {};
@@ -251,101 +253,97 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     }
   };
 
+  const todo = b.unknown.count + b.excluded.length;
+  const PAL = ['#534AB7', '#0F6E56', '#993C1D', '#185FA5', '#993556', '#854F0B', '#5F5E5A'];
+  const reste = avgIncome - avgSpend;
+  const blocks = useMemo(() => {
+    const top = cats.slice(0, 6);
+    const others = cats.slice(6);
+    const rest = others.reduce((s, c) => s + c.avg, 0);
+    return [
+      ...top.map((c, i) => ({ key: c.key, label: LABEL[c.key] ?? c.key, v: c.avg, color: PAL[i], trend: c.trend })),
+      ...(rest > 0 ? [{ key: '_autres', label: 'Autres', v: rest, color: PAL[6], trend: null as number | null }] : []),
+      ...(reste > 0 ? [{ key: '_reste', label: 'Reste', v: reste, color: '#639922', trend: null as number | null }] : []),
+    ];
+  }, [cats, reste]);
+  const cur = blocks.find((x) => x.key === sel) ?? blocks[0];
+  const denom = Math.max(avgIncome, avgSpend, 1);
+  const spark = useMemo(() => {
+    if (!cur) return [];
+    const other = new Set(cats.slice(6).map((c) => c.key));
+    return full.slice(-12).map((m) => (cur.key === '_reste' ? m.income - m.spend : cur.key === '_autres' ? [...other].reduce((s, k) => s + (m.byCategory[k] ?? 0), 0) : m.byCategory[cur.key] ?? 0));
+  }, [cur, full, cats]);
+  const sparkMax = Math.max(1, ...spark.map((v) => Math.abs(v)));
+  const seg = (
+    <div className="seg" role="tablist" aria-label="Période">
+      <button className={period === 'm' ? 'on' : ''} onClick={() => setPeriod('m')}>Mois</button>
+      <button className={period === '12' ? 'on' : ''} onClick={() => setPeriod('12')}>12 mois</button>
+      {years.map((y) => <button key={y} className={period === y ? 'on' : ''} onClick={() => setPeriod(y)}>{y}</button>)}
+    </div>
+  );
+
   return (
     <div className="page wide budget">
-      <h1>Budget</h1>
-      <p className="lede">Ce que ton ménage dépense vraiment, d’après tes relevés. Chaque ligne n’est comptée qu’une fois, les virements entre tes comptes et les doublons sont écartés.</p>
-
-      <section className="tile import">
-        <h2>Dossier de documents</h2>
-        <div className="imp-row">
-          <input className="path" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="/Users/toi/Documents/Horizon-Documents" aria-label="Dossier de documents" />
-          <button className="btn primary" onClick={rescan} disabled={running || !dir.trim()}>{running ? 'Lecture en cours…' : 'Relire le dossier'}</button>
-        </div>
-        {running ? (
-          <div className="working" role="status" aria-live="polite">
-            <i className="spin" aria-hidden="true" />
-            <span>{state.watch.step || 'Lecture'}…</span>
-            <div className="shimmer" aria-hidden="true" />
-          </div>
-        ) : null}
-        <p className="muted small">
-          {running ? `${state.watch.step || 'Lecture'}…` : msg || (state.watch.last ? summary(state.watch.last) : 'Dépose tes relevés dans ce dossier, puis relis-le: les nouveaux fichiers sont lus, les déjà connus ignorés.')}
-          {b.count > 0 ? ` Budget: ${b.count} lignes, ${plural(b.accounts.length, 'compte')}${b.currencies.length > 1 ? `, devises ${b.currencies.join(', ')}` : ''}.` : ''}
-        </p>
-        {state.watch.last && state.watch.last.notes.length > 0 ? (
-          <ul className="muted small notes">
-            {state.watch.last.notes.slice(0, 5).map((n) => <li key={n}>{n}</li>)}
-          </ul>
-        ) : null}
-        <details className="manual">
-          <summary>Ajouter des fichiers à la main</summary>
-          <div className="imp-row">
-            <input type="file" multiple accept=".csv,.txt,.xml" aria-label="Relevés de comptes et de cartes" onChange={(e) => setFiles([...(e.target.files ?? [])])} />
-            <button className="btn" onClick={add} disabled={busy || files.length === 0}>Ajouter</button>
-          </div>
-        </details>
-        {err ? <p className="error" role="alert">{err}</p> : null}
-      </section>
-
-      {last ? (
+      <div className="topbar">
+        {view === 'home' && last ? seg : <button className="iconbtn" onClick={() => setView('home')} aria-label="Retour"><ArrowLeft size={18} strokeWidth={1.6} /></button>}
+        {view === 'home' && last ? <button className="iconbtn" onClick={() => setView('todo')} aria-label="Documents et points à traiter" title="Documents et points à traiter"><FolderOpen size={18} strokeWidth={1.6} />{todo > 0 ? <i className="badge">{todo}</i> : null}</button> : <span className="muted small">Documents</span>}
+      </div>
+      {view === 'home' && last ? (
         <>
-          {years.length > 0 ? (
-            <div className="periods" role="tablist" aria-label="Période">
-              <button className={'btn' + (period === '12' ? ' primary' : '')} onClick={() => setPeriod('12')}>12 derniers mois</button>
-              {years.map((y) => <button key={y} className={'btn' + (period === y ? ' primary' : '')} onClick={() => setPeriod(y)}>{y}</button>)}
+          <section className="hero">
+            <p className="unit">Reste {period === 'm' ? '' : 'par mois'}</p>
+            <p className={'big xl' + (reste < 0 ? ' neg' : '')}>{money(reste)}</p>
+            <p className="unit">revenus {money(avgIncome)} · dépenses {money(avgSpend)}</p>
+          </section>
+          <div className="stackbar" role="group" aria-label="Répartition des revenus">
+            {blocks.map((x) => <button key={x.key} className={x.key === cur?.key ? 'on' : ''} style={{ flex: Math.max(x.v, 1) / denom, background: x.color }} aria-label={`${x.label} ${Math.round((x.v / denom) * 100)} %`} onClick={() => setSel(x.key)} />)}
+          </div>
+          <div className="legrow">
+            {blocks.map((x) => <button key={x.key} className={x.key === cur?.key ? 'on' : ''} onClick={() => setSel(x.key)}><i style={{ background: x.color }} />{x.label} {Math.round((x.v / denom) * 100)} %</button>)}
+          </div>
+          {cur ? (
+            <section className="detcard">
+              <div className="h"><span>{cur.label}</span><span className="a">{money(cur.v)}</span></div>
+              <p className="unit">{Math.round((cur.v / denom) * 100)} % des revenus{cur.key !== '_reste' && avgIncome > 0 ? ` · ${(Math.round((cur.v / avgIncome) * 210) / 10).toString().replace('.', ',')} jours de travail par mois` : ''}{cur.trend !== null && Math.abs(cur.trend) > 0.15 ? ` · ${cur.trend > 0 ? 'en hausse' : 'en baisse'} ${Math.abs(Math.round(cur.trend * 100))} %` : ''}</p>
+              <div className="spark" role="img" aria-label="12 derniers mois">{spark.map((v, i) => <i key={i} className={i === spark.length - 1 ? 'last' : ''} style={{ height: `${Math.max(3, (Math.abs(v) / sparkMax) * 100)}%` }} />)}</div>
+              <p className="unit">12 derniers mois</p>
+            </section>
+          ) : null}
+          {immoRows.length > 0 || worksByBien.length > 0 ? (
+            <details className="drawer">
+              <summary>Immobilier et travaux</summary>
+          {immoRows.length > 0 ? (
+            <div className="inner">
+              <ul className="cats">
+                <li><span className="name muted small">Bien</span><span className="amt muted small">Loyers · charges · net</span></li>
+                {immoRows.map(([bien, v]) => (
+                  <li key={bien}>
+                    <span className="name">{(b.homes ?? []).includes(bien) && !/domicile/i.test(bien) ? `${bien} (domicile)` : bien}</span>
+                    <span className="amt">{(b.homes ?? []).includes(bien) ? `${money(v.charges)} de charges` : `${money(v.loyers)} · ${money(v.charges)} · ${money(v.loyers - v.charges)}`}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted small">Sur {periodLabel}. Les loyers sont nets de charges PPE et de gérance. Charges: intérêts hypothécaires, charges PPE, décomptes et travaux.</p>
             </div>
           ) : null}
-          <div className="three">
-            <section className="tile"><h2>Revenus par mois</h2><p className="big">{money(avgIncome)}</p><p className="unit">moyenne sur {periodLabel}</p></section>
-            <section className="tile"><h2>Dépenses par mois</h2><p className="big">{money(avgSpend)}</p><p className="unit">{avgIncome > 0 ? `${fmt.pct(avgSpend / avgIncome)} des revenus` : 'revenus non identifiés'}{avgEstimated > 1 ? `, dont ${money(avgEstimated)} estimé` : ''}</p>
-              <p className="unit">Habituelles, sans travaux ni montants uniques: {money(avgSpend - avgOneOff)}</p></section>
-            <section className="tile">
-              <h2>Reste par mois</h2>
-              <p className={'big' + (avgIncome - avgSpend < 0 ? ' neg' : '')}>{money(avgIncome - avgSpend)}</p>
-              <p className="unit">dernier mois, {monthName(used[used.length - 1].month)}: {money(used[used.length - 1].income - used[used.length - 1].spend)}</p>
-            </section>
-          </div>
-
-          <section className="tile">
-            <h2>Mois par mois</h2>
-            <div className="bars" role="img" aria-label="Revenus et dépenses par mois">
-              {used.map((m) => (
-                <div key={m.month} className="bar-col" title={monthName(m.month)}>
-                  <div className="pair">
-                    <i className="inc" style={{ height: `${(m.income / maxBar) * 100}%` }} />
-                    {m.exceptional > 0 ? <i className="one" style={{ height: `${(m.exceptional / maxBar) * 100}%` }} /> : null}
-                    <i className={'out' + (m.spend > m.income && m.income > 0 ? ' over' : '')} style={{ height: `${(m.spend / maxBar) * 100}%` }} />
-                  </div>
-                  <span>{m.month.slice(5)}</span>
-                </div>
-              ))}
+          {worksByBien.length > 0 ? (
+            <div className="inner">
+              <ul className="cats">
+                {worksByBien.map(([bien, total]) => (
+                  <li key={bien}>
+                    <span className="name">{bien}</span>
+                    <span className="amt">{money(total)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted small">Total sur {periodLabel}. Les charges PPE et les intérêts restent dans Immobilier.</p>
             </div>
-            <p className="legend"><i className="inc" />Revenus <i className="one" />Versements uniques <i className="out" />Dépenses</p>
-            <p className="muted small">
-              Sur {periodLabel}: revenus réguliers {money(sum((m) => m.income))}, versements uniques {money(sum((m) => m.exceptional))}, dépenses {money(sum((m) => m.spend))}, mis de côté {money(sum((m) => m.saved))} (épargne, prévoyance, parts sociales). Seuls les doublons et les virements entre tes comptes sont écartés.
-            </p>
-          </section>
-
-          <section className="tile">
-            <h2>Où part l’argent</h2>
-            <ul className="cats">
-              {cats.map((c) => (
-                <li key={c.key}>
-                  <span className="name">{LABEL[c.key] ?? c.key}</span>
-                  <span className="share"><i style={{ width: `${avgSpend > 0 ? Math.min(100, (c.avg / avgSpend) * 100) : 0}%` }} /></span>
-                  <span className="amt">{money(c.avg)}{c.prevAvg !== null && prevYear.length >= 6 ? <span className="muted small"> ({Number(period) - 1}: {money(c.prevAvg)})</span> : null}</span>
-                  <span className={'trend' + (c.trend !== null && c.trend > 0.15 ? ' up' : c.trend !== null && c.trend < -0.15 ? ' down' : '')}>
-                    {c.trend === null ? '' : c.trend > 0.15 ? <><ArrowUpRight size={14} strokeWidth={1.8} />{Math.round(c.trend * 100)} %</> : c.trend < -0.15 ? <><ArrowDownRight size={14} strokeWidth={1.8} />{Math.round(c.trend * 100)} %</> : 'stable'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="muted small">Moyenne par mois. {prevYear.length >= 6 ? `La tendance compare ${period} à ${Number(period) - 1}.` : 'La tendance compare les trois derniers mois aux trois précédents.'}</p>
-          </section>
+          ) : null}
+            </details>
+          ) : null}
           {catTable.cols.length > 0 && catTable.keys.length > 0 ? (
-            <section className="tile">
-              <h2>Dépenses par catégorie</h2>
+            <details className="drawer">
+              <summary>Tableau par catégorie</summary>
               <div className="periods" role="tablist" aria-label="Affichage des catégories">
                 <button className={'btn' + (catView === 'annee' ? ' primary' : '')} onClick={() => setCatView('annee')}>Par année</button>
                 <button className={'btn' + (catView === 'mois' ? ' primary' : '')} onClick={() => setCatView('mois')}>Par mois</button>
@@ -381,41 +379,47 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                 </table>
               </div>
               <p className="muted small">{catView === 'annee' ? 'Total payé dans l’année, impôts rattachés à leur année. L’évolution compare la moyenne mensuelle des deux dernières années.' : `Dépenses de chaque mois sur ${periodLabel}.`}</p>
-            </section>
+            </details>
           ) : null}
-
-          {immoRows.length > 0 ? (
-            <section className="tile">
-              <h2>Immobilier: ménage et locatif</h2>
-              <ul className="cats">
-                <li><span className="name muted small">Bien</span><span className="amt muted small">Loyers · charges · net</span></li>
-                {immoRows.map(([bien, v]) => (
-                  <li key={bien}>
-                    <span className="name">{(b.homes ?? []).includes(bien) && !/domicile/i.test(bien) ? `${bien} (domicile)` : bien}</span>
-                    <span className="amt">{(b.homes ?? []).includes(bien) ? `${money(v.charges)} de charges` : `${money(v.loyers)} · ${money(v.charges)} · ${money(v.loyers - v.charges)}`}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="muted small">Sur {periodLabel}. Les loyers sont nets de charges PPE et de gérance. Charges: intérêts hypothécaires, charges PPE, décomptes et travaux.</p>
-            </section>
-          ) : null}
-          {worksByBien.length > 0 ? (
-            <section className="tile">
-              <h2>Travaux par bien</h2>
-              <ul className="cats">
-                {worksByBien.map(([bien, total]) => (
-                  <li key={bien}>
-                    <span className="name">{bien}</span>
-                    <span className="amt">{money(total)}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="muted small">Total sur {periodLabel}. Les charges PPE et les intérêts restent dans Immobilier.</p>
-            </section>
-          ) : null}
+          <details className="drawer">
+            <summary>Exceptionnel</summary>
+            <p className="muted small">Dépenses habituelles: {money(avgSpend - avgOneOff)} par mois, sans travaux ni montants uniques ({money(avgOneOff)}). Versements uniques non comptés dans le revenu: {money(sum((m) => m.exceptional))} sur {periodLabel}.</p>
+          </details>
         </>
       ) : null}
-
+      {view === 'todo' || !last ? (
+        <>
+      <section className="tile import">
+        <h2>Dossier de documents</h2>
+        <div className="imp-row">
+          <input className="path" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="/Users/toi/Documents/Horizon-Documents" aria-label="Dossier de documents" />
+          <button className="btn primary" onClick={rescan} disabled={running || !dir.trim()}>{running ? 'Lecture en cours…' : 'Relire le dossier'}</button>
+        </div>
+        {running ? (
+          <div className="working" role="status" aria-live="polite">
+            <i className="spin" aria-hidden="true" />
+            <span>{state.watch.step || 'Lecture'}…</span>
+            <div className="shimmer" aria-hidden="true" />
+          </div>
+        ) : null}
+        <p className="muted small">
+          {running ? `${state.watch.step || 'Lecture'}…` : msg || (state.watch.last ? summary(state.watch.last) : 'Dépose tes relevés dans ce dossier, puis relis-le: les nouveaux fichiers sont lus, les déjà connus ignorés.')}
+          {b.count > 0 ? ` Budget: ${b.count} lignes, ${plural(b.accounts.length, 'compte')}${b.currencies.length > 1 ? `, devises ${b.currencies.join(', ')}` : ''}.` : ''}
+        </p>
+        {state.watch.last && state.watch.last.notes.length > 0 ? (
+          <ul className="muted small notes">
+            {state.watch.last.notes.slice(0, 5).map((n) => <li key={n}>{n}</li>)}
+          </ul>
+        ) : null}
+        <details className="manual">
+          <summary>Ajouter des fichiers à la main</summary>
+          <div className="imp-row">
+            <input type="file" multiple accept=".csv,.txt,.xml" aria-label="Relevés de comptes et de cartes" onChange={(e) => setFiles([...(e.target.files ?? [])])} />
+            <button className="btn" onClick={add} disabled={busy || files.length === 0}>Ajouter</button>
+          </div>
+        </details>
+        {err ? <p className="error" role="alert">{err}</p> : null}
+      </section>
       {b.excluded.length > 0 ? (
         <section className="tile">
           <h2>Versements uniques non comptés</h2>
@@ -431,64 +435,6 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           </ul>
         </section>
       ) : null}
-
-      <section className="tile">
-        <h2>Mes biens</h2>
-        <p className="muted small">Dis à quel bien appartient un fournisseur (régie, copropriété, artisan, banque du prêt): ses loyers, charges et travaux sont alors regroupés par bien. Si un même fournisseur change de bien, ajoute une période.</p>
-        {rules.length > 0 && !rulesOpen ? (
-          <ul className="changes">
-            {rules.map((r, i) => (
-              <li key={i}><span className="name">{r.bien}{r.home ? ' (domicile)' : ''} <span className="muted small">{r.words}{r.from || r.to ? `, ${r.from || '…'} → ${r.to || '…'}` : ''}</span></span></li>
-            ))}
-          </ul>
-        ) : null}
-        {rulesOpen ? (
-          <div className="biens-form">
-            {rules.map((r, i) => (
-              <div className="est-form" key={i}>
-                <input value={r.words} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, words: e.target.value } : x)))} placeholder="Mots du libellé, séparés par une virgule" aria-label="Mots du libellé" />
-                <input value={r.bien} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, bien: e.target.value } : x)))} placeholder="Nom du bien" aria-label="Nom du bien" />
-                <input value={r.from} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)))} placeholder="Dès (AAAA-MM-JJ)" aria-label="Dès" />
-                <input value={r.to} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, to: e.target.value } : x)))} placeholder="Jusqu'à" aria-label="Jusqu'à" />
-                <label className="small"><input type="checkbox" checked={r.home} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, home: e.target.checked } : x)))} /> Mon domicile</label>
-                <button className="btn small" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Retirer</button>
-              </div>
-            ))}
-            <div className="est-form">
-              <button className="btn small" onClick={() => setRules([...rules, { words: '', bien: '', home: false, from: '', to: '' }])}>Ajouter un fournisseur</button>
-              <button className="btn" onClick={saveRules}>Enregistrer</button>
-              <button className="btn small" onClick={() => setRulesOpen(false)}>Annuler</button>
-            </div>
-          </div>
-        ) : (
-          <button className="btn small" onClick={() => { if (rules.length === 0) setRules([{ words: '', bien: '', home: false, from: '', to: '' }]); setRulesOpen(true); }}>{rules.length ? 'Modifier' : 'Ajouter un bien'}</button>
-        )}
-      </section>
-
-      <section className="tile">
-        <h2>Dépenses connues hors relevés</h2>
-        <p className="muted small">Une carte perdue ou des paiements en espèces: indique ce que tu sais, c'est ajouté chaque mois et marqué comme estimé. Si une ligne réelle correspond dans un relevé, elle prend le dessus.</p>
-        {b.estimates.length > 0 ? (
-          <ul className="changes">
-            {b.estimates.map((x) => (
-              <li key={x.id}>
-                <span className="name">{x.label} <span className="muted small">({LABEL[x.category] ?? x.category})</span></span>
-                <span className="amt">{reveal ? `${x.currency} ${x.amount} ${x.per === 'year' ? 'par an' : 'par mois'}` : '••••'}</span>
-                <button className="btn small" onClick={() => removeEst(x.id)} aria-label={`Retirer ${x.label}`}>Retirer</button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <div className="est-form">
-          <input value={est.label} onChange={(e) => setEst({ ...est, label: e.target.value })} placeholder="Netflix, Claude, abonnement..." aria-label="Libellé" />
-          <input value={est.amount} onChange={(e) => setEst({ ...est, amount: e.target.value })} placeholder="Montant" inputMode="decimal" aria-label="Montant" />
-          <select value={est.currency} onChange={(e) => setEst({ ...est, currency: e.target.value })} aria-label="Devise">{['CHF', ...b.currencies.filter((c) => c !== 'CHF')].map((c) => <option key={c}>{c}</option>)}</select>
-          <select value={est.per} onChange={(e) => setEst({ ...est, per: e.target.value })} aria-label="Fréquence"><option value="month">par mois</option><option value="year">par an</option></select>
-          <select value={est.category} onChange={(e) => setEst({ ...est, category: e.target.value })} aria-label="Catégorie">{CATS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-          <button className="btn" onClick={addEst} disabled={!est.label.trim() || !est.amount}>Ajouter</button>
-        </div>
-      </section>
-
       {b.unknownSamples.length > 0 || b.unknownMinor.count > 0 ? (
         <section className="tile">
           <h2>À identifier</h2>
@@ -528,6 +474,63 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             </p>
           ) : null}
         </section>
+      ) : null}
+      <section className="tile">
+        <h2>Mes biens</h2>
+        <p className="muted small">Dis à quel bien appartient un fournisseur (régie, copropriété, artisan, banque du prêt): ses loyers, charges et travaux sont alors regroupés par bien. Si un même fournisseur change de bien, ajoute une période.</p>
+        {rules.length > 0 && !rulesOpen ? (
+          <ul className="changes">
+            {rules.map((r, i) => (
+              <li key={i}><span className="name">{r.bien}{r.home && !/domicile/i.test(r.bien) ? ' (domicile)' : ''} <span className="muted small">{r.words}{r.from || r.to ? `, ${r.from || '…'} → ${r.to || '…'}` : ''}</span></span></li>
+            ))}
+          </ul>
+        ) : null}
+        {rulesOpen ? (
+          <div className="biens-form">
+            {rules.map((r, i) => (
+              <div className="est-form" key={i}>
+                <input value={r.words} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, words: e.target.value } : x)))} placeholder="Mots du libellé, séparés par une virgule" aria-label="Mots du libellé" />
+                <input value={r.bien} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, bien: e.target.value } : x)))} placeholder="Nom du bien" aria-label="Nom du bien" />
+                <input value={r.from} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)))} placeholder="Dès (AAAA-MM-JJ)" aria-label="Dès" />
+                <input value={r.to} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, to: e.target.value } : x)))} placeholder="Jusqu'à" aria-label="Jusqu'à" />
+                <label className="small"><input type="checkbox" checked={r.home} onChange={(e) => setRules(rules.map((x, j) => (j === i ? { ...x, home: e.target.checked } : x)))} /> Mon domicile</label>
+                <button className="btn small" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Retirer</button>
+              </div>
+            ))}
+            <div className="est-form">
+              <button className="btn small" onClick={() => setRules([...rules, { words: '', bien: '', home: false, from: '', to: '' }])}>Ajouter un fournisseur</button>
+              <button className="btn" onClick={saveRules}>Enregistrer</button>
+              <button className="btn small" onClick={() => setRulesOpen(false)}>Annuler</button>
+            </div>
+          </div>
+        ) : (
+          <button className="btn small" onClick={() => { if (rules.length === 0) setRules([{ words: '', bien: '', home: false, from: '', to: '' }]); setRulesOpen(true); }}>{rules.length ? 'Modifier' : 'Ajouter un bien'}</button>
+        )}
+      </section>
+      <section className="tile">
+        <h2>Dépenses connues hors relevés</h2>
+        <p className="muted small">Une carte perdue ou des paiements en espèces: indique ce que tu sais, c'est ajouté chaque mois et marqué comme estimé. Si une ligne réelle correspond dans un relevé, elle prend le dessus.</p>
+        {b.estimates.length > 0 ? (
+          <ul className="changes">
+            {b.estimates.map((x) => (
+              <li key={x.id}>
+                <span className="name">{x.label} <span className="muted small">({LABEL[x.category] ?? x.category})</span></span>
+                <span className="amt">{reveal ? `${x.currency} ${x.amount} ${x.per === 'year' ? 'par an' : 'par mois'}` : '••••'}</span>
+                <button className="btn small" onClick={() => removeEst(x.id)} aria-label={`Retirer ${x.label}`}>Retirer</button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="est-form">
+          <input value={est.label} onChange={(e) => setEst({ ...est, label: e.target.value })} placeholder="Netflix, Claude, abonnement..." aria-label="Libellé" />
+          <input value={est.amount} onChange={(e) => setEst({ ...est, amount: e.target.value })} placeholder="Montant" inputMode="decimal" aria-label="Montant" />
+          <select value={est.currency} onChange={(e) => setEst({ ...est, currency: e.target.value })} aria-label="Devise">{['CHF', ...b.currencies.filter((c) => c !== 'CHF')].map((c) => <option key={c}>{c}</option>)}</select>
+          <select value={est.per} onChange={(e) => setEst({ ...est, per: e.target.value })} aria-label="Fréquence"><option value="month">par mois</option><option value="year">par an</option></select>
+          <select value={est.category} onChange={(e) => setEst({ ...est, category: e.target.value })} aria-label="Catégorie">{CATS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+          <button className="btn" onClick={addEst} disabled={!est.label.trim() || !est.amount}>Ajouter</button>
+        </div>
+      </section>
+        </>
       ) : null}
     </div>
   );

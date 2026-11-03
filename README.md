@@ -56,9 +56,7 @@ Captures prises sur des données de démonstration inventées (famille fictive c
 
 ![Immobilier par bien](docs/screenshots/immobilier.jpg)
 
-![Travaux par bien](docs/screenshots/travaux.jpg)
-
-- **Budget** (accueil): les trois tuiles (revenus, dépenses, reste), le rythme habituel, les mois, les catégories avec tendance, le tableau des dépenses par catégorie (par année ou par mois), l'immobilier par bien, les travaux, ce qu'il reste à identifier. Sélecteur: 12 derniers mois ou une année.
+- **Budget** (accueil): un chiffre (ce qui reste), une barre où chaque bloc est une catégorie (touche un bloc pour le détail), et trois tiroirs: immobilier et travaux, tableau par catégorie (par année ou par mois), exceptionnel. Sélecteur unique: mois, 12 mois ou une année. L'icône dossier ouvre les documents et les points à traiter.
 - **Importer**: lit un dossier ou des fichiers, masque les identifiants.
 - **À valider**: faits proposés par la lecture des documents, en attente de ton accord.
 - **Données**: tout ce qui est connu, modifiable, avec historique.
