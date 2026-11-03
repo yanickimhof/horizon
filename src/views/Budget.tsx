@@ -246,128 +246,133 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       </optgroup>
     </select>
   );
-  const GROUPS: [string, string, string[]][] = [
-    ['Logement', '#534AB7', ['logement', 'travaux', 'maison', 'energie', 'telecom']],
-    ['Impôts et assurances', '#185FA5', ['impots', 'assurances', 'sante']],
-    ['Vie courante', '#0F6E56', ['alimentation', 'restaurants', 'vetements', 'quotidien', 'dons']],
-    ['Famille', '#993556', ['enfants', 'famille']],
-    ['Transports', '#5F5E5A', ['vehicule', 'transports']],
-    ['Loisirs et voyages', '#854F0B', ['loisirs', 'voyages', 'abonnements']],
+  const rec = state.recurring;
+  const [tab, setTab] = useState<'revient' | 'quotidien' | 'exceptionnel' | 'evolution' | 'immo'>('revient');
+  const [more, setMore] = useState(false);
+  const monthsN = Math.max(rec.months.length, 1);
+  const spendYear = rec.totals.recurring + rec.totals.daily + rec.totals.exceptional;
+  const resteM = (rec.income - spendYear) / monthsN;
+  const barMax = Math.max(rec.income, spendYear, 1);
+  const parts: { k: typeof tab; label: string; v: number; color: string }[] = [
+    { k: 'revient', label: 'Ce qui revient', v: rec.totals.recurring, color: '#534AB7' },
+    { k: 'quotidien', label: 'Le quotidien', v: rec.totals.daily, color: '#0F6E56' },
+    { k: 'exceptionnel', label: 'Exceptionnel', v: rec.totals.exceptional, color: '#b7791f' },
   ];
-  const groups = useMemo(() => {
-    const known = new Set(GROUPS.flatMap((g) => g[2]));
-    const mk = (name: string, color: string, keys: string[]) => {
-      const items = cats.filter((c) => keys.includes(c.key));
-      return { name, color, v: items.reduce((t, c) => t + c.avg, 0), items };
-    };
-    const rest = cats.filter((c) => !known.has(c.key));
-    return [...GROUPS.map(([n, c, k]) => mk(n, c, k)), { name: 'Autres', color: '#8a8a85', v: rest.reduce((t, c) => t + c.avg, 0), items: rest }].filter((g) => g.v > 0).sort((p, q) => q.v - p.v);
-  }, [cats]);
-  const [flowSel, setFlowSel] = useState('');
-  const flowTotal = Math.max(avgIncome, avgSpend, 1);
-  const flowNodes = [...groups.map((g) => ({ ...g })), ...(reste > 0 ? [{ name: 'Reste', color: '#639922', v: reste, items: [] as typeof cats }] : [])];
-  const flowCur = flowNodes.find((g) => g.name === flowSel);
-  const insights = (() => {
-    const out: { icon: 'up' | 'down' | 'top' | 'todo' | 'once'; title: string; sub: string; go: 'all' | 'todo' }[] = [];
-    if (cats[0] && avgIncome > 0) out.push({ icon: 'top', title: `${LABEL[cats[0].key] ?? cats[0].key} est ton premier poste`, sub: `${Math.round((cats[0].avg / avgIncome) * 100)} % de tes revenus`, go: 'all' });
-    const moved = cats.filter((c) => c.trend !== null && c.prevAvg !== null && Math.abs(c.trend) > 0.15 && Math.abs(c.avg - c.prevAvg) > 50).sort((p, q) => Math.abs(q.avg - (q.prevAvg ?? 0)) - Math.abs(p.avg - (p.prevAvg ?? 0)))[0];
-    if (moved && moved.trend !== null) out.push({ icon: moved.trend > 0 ? 'up' : 'down', title: `${LABEL[moved.key] ?? moved.key} en ${moved.trend > 0 ? 'hausse' : 'baisse'}`, sub: `${moved.trend > 0 ? '+' : ''}${Math.round(moved.trend * 100)} % par rapport ${prevLabel}`, go: 'all' });
-    if (b.excluded.length > 0) out.push({ icon: 'once', title: b.excluded.length > 1 ? `${b.excluded.length} versements uniques non comptés` : 'Un versement unique non compté', sub: 'À confirmer', go: 'todo' });
-    else if (b.unknown.count > 0) out.push({ icon: 'todo', title: `${plural(b.unknown.count, 'ligne')} à identifier`, sub: 'Une minute', go: 'todo' });
-    return out.slice(0, 3);
-  })();
+  const pct = (t: number | null) => (t === null ? '' : `${t > 0 ? '+' : ''}${Math.round(t * 100)} %`);
+  const Trend = ({ t, d }: { t: number | null; d: number | null }) => (t !== null && d !== null && Math.abs(t) >= 0.1 && Math.abs(d) >= 100 ? <span className={'chip ' + (t > 0 ? 'up' : 'down')}>{pct(t)}</span> : null);
+  const cut = (n: number) => (more ? n : 8);
+  const moving = [...rec.recurring, ...rec.merchants.map((m) => ({ ...m, perYear: m.total }))]
+    .filter((x) => x.trend !== null && x.delta !== null && Math.abs(x.trend) >= 0.1 && Math.abs(x.delta) >= 150)
+    .sort((p, q) => Math.abs((q.delta ?? 0)) - Math.abs((p.delta ?? 0)))
+    .slice(0, 10);
+  const levers = rec.recurring.filter((x) => x.lever).slice(0, 6);
+  const dateFr = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('fr-CH', { day: '2-digit', month: '2-digit', year: '2-digit' });
   const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k)])];
   const maxCat = Math.max(1, ...cats.map((c) => (catView === 'total' ? c.total : c.avg)));
 
   return (
     <div className="page wide budget">
       <div className="topbar">
-        {view === 'home' && last ? periodSelect : <button className="iconbtn" onClick={() => setView('home')} aria-label="Retour"><ArrowLeft size={18} strokeWidth={1.6} /></button>}
+        {view === 'home' && last ? <span className="muted small">12 derniers mois</span> : <button className="iconbtn" onClick={() => setView('home')} aria-label="Retour"><ArrowLeft size={18} strokeWidth={1.6} /></button>}
         {view === 'home' && last ? <button className="iconbtn" onClick={() => setView('todo')} aria-label="Documents et points à traiter" title="Documents et points à traiter"><FolderOpen size={18} strokeWidth={1.6} />{todo > 0 ? <i className="badge">{todo}</i> : null}</button> : <span className="muted small">{view === 'all' ? '' : 'Documents'}</span>}
       </div>
 
       {view === 'home' && last ? (
         <>
           <section className="hero">
-            <p className="unit">Reste{used.length > 1 ? ' par mois' : ''}</p>
-            <p className={'big xl' + (reste < 0 ? ' neg' : '')}>{money(reste)}</p>
+            <p className="unit">Reste par mois</p>
+            <p className={'big xl' + (resteM < 0 ? ' neg' : '')}>{money(resteM)}</p>
+            <p className="unit">entrées {money(rec.income / monthsN)} · sorties {money(spendYear / monthsN)}</p>
           </section>
-          <div className="insights">
-            {insights.map((i, n) => (
-              <button key={n} className="insight" onClick={() => setView(i.go)}>
-                {i.icon === 'up' ? <TrendingUp size={20} strokeWidth={1.6} color="#c4452d" /> : i.icon === 'down' ? <TrendingDown size={20} strokeWidth={1.6} color="#2f7d4f" /> : i.icon === 'top' ? <PieChart size={20} strokeWidth={1.6} color="#534AB7" /> : <AlertCircle size={20} strokeWidth={1.6} color="#b7791f" />}
-                <span className="t">{i.title}<small>{i.sub}</small></span>
-                <ChevronRight size={16} strokeWidth={1.6} />
-              </button>
+          <div className="stackbar" role="group" aria-label="Répartition des sorties">
+            {parts.map((x) => <button key={x.k} className={tab === x.k ? 'on' : ''} style={{ flex: Math.max(x.v, 1) / barMax, background: x.color }} aria-label={x.label} onClick={() => { setTab(x.k); setMore(false); }} />)}
+            {resteM > 0 ? <i className="free" style={{ flex: (resteM * monthsN) / barMax }} /> : null}
+          </div>
+          <div className="seg wide" role="tablist" aria-label="Rubriques">
+            {([['revient', 'Revient'], ['quotidien', 'Quotidien'], ['exceptionnel', 'Exceptionnel'], ['evolution', 'Évolution'], ['immo', 'Immobilier']] as [typeof tab, string][]).map(([k, l]) => (
+              <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setTab(k); setMore(false); }}>{l}</button>
             ))}
           </div>
-          <button className="morelink" onClick={() => setView('all')}>Voir où va l’argent</button>
-        </>
-      ) : null}
 
-      {view === 'all' && last ? (
-        <>
-          <svg className="flow" viewBox="0 0 400 300" role="img" aria-label="Flux des revenus vers les dépenses et le reste">
-            {(() => {
-              const H = 286, k = H / flowTotal, xl = 70, xr = 250;
-              let yl = 7;
-              let yr = 7;
-              const els: ReactElement[] = [];
-              flowNodes.forEach((g, i) => {
-                const h = Math.max(g.v * k, 2);
-                const r = Math.min(avgIncome, flowTotal) / flowTotal;
-                const hl = h * r;
-                const yl0 = yl;
-                const y2 = yr;
-                const y1 = yl0;
-                els.push(<path key={g.name} d={`M${xl} ${y1} C${xl + 80} ${y1} ${xr - 80} ${y2} ${xr} ${y2} L${xr} ${y2 + h} C${xr - 80} ${y2 + h} ${xl + 80} ${y1 + hl} ${xl} ${y1 + hl} Z`} fill={g.color} opacity={flowSel === g.name ? 0.6 : 0.3} onClick={() => setFlowSel(g.name)} style={{ cursor: 'pointer' }} />);
-                els.push(<rect key={g.name + 'r'} x={xr} y={y2} width={6} height={h} rx={2} fill={g.color} />);
-                els.push(<text key={g.name + 't'} x={xr + 12} y={y2 + Math.max(h / 2, 7) + 4} className="flowlab" onClick={() => setFlowSel(g.name)} style={{ cursor: 'pointer', fontWeight: flowSel === g.name ? 600 : 400 }}>{g.name}</text>);
-                yr += h + 3;
-                yl += hl;
-              });
-              els.push(<rect key="src" x={xl - 6} y={7} width={6} height={Math.min(avgIncome, flowTotal) * k} rx={2} fill="#534AB7" />);
-              els.push(<text key="srct" x={xl - 12} y={7 + (Math.min(avgIncome, flowTotal) * k) / 2 + 4} textAnchor="end" className="flowlab">Revenus</text>);
-              return els;
-            })()}
-          </svg>
-          <div className="flowdet">
-            {flowCur ? (
-              <>
-                <div className="fh"><b>{flowCur.name}</b><span>{money(flowCur.v)}{used.length > 1 ? ' par mois' : ''}</span></div>
-                {flowCur.items.length > 0 ? <ul className="muted small">{flowCur.items.map((c) => <li key={c.key} className="fi"><span>{LABEL[c.key] ?? c.key}</span><span>{money(c.avg)}</span></li>)}</ul> : null}
-              </>
-            ) : <p className="muted small center">Touche un flux pour voir le montant.</p>}
-          </div>
-          <details className="drawer">
-            <summary>Toutes les catégories</summary>
-            <div className="allhead">
-              <span className="muted small">{periodLabel}</span>
-              {used.length > 1 ? (
-                <div className="seg" role="tablist" aria-label="Affichage">
-                  <button className={catView === 'moy' ? 'on' : ''} onClick={() => setCatView('moy')}>Par mois</button>
-                  <button className={catView === 'total' ? 'on' : ''} onClick={() => setCatView('total')}>Total</button>
-                </div>
+          {tab === 'revient' ? (
+            <section>
+              <p className="sub">{money(rec.totals.recurring / monthsN)} par mois, {money(rec.totals.recurring)} par an. Ce que tu paies même en ne faisant rien.</p>
+              <ul className="rows">
+                {rec.recurring.slice(0, cut(rec.recurring.length)).map((x) => (
+                  <li key={x.key}>
+                    <span className="n">{x.label}<small>{LABEL[x.category] ?? x.category} · {x.cadence}{x.bien ? ` · ${x.bien}` : ''}{x.lever ? ' · à comparer' : ''}</small></span>
+                    <Trend t={x.trend} d={x.delta} />
+                    <span className="v">{money(x.perYear)}<small>par an</small></span>
+                  </li>
+                ))}
+              </ul>
+              {rec.recurring.length > 8 ? <button className="morelink" onClick={() => setMore(!more)}>{more ? 'Réduire' : `Voir les ${rec.recurring.length - 8} autres`}</button> : null}
+            </section>
+          ) : null}
+
+          {tab === 'quotidien' ? (
+            <section>
+              <p className="sub">{money(rec.totals.daily / monthsN)} par mois chez les commerçants. Les plus gros d’abord.</p>
+              <ul className="rows">
+                {rec.merchants.slice(0, cut(rec.merchants.length)).map((x) => (
+                  <li key={x.key}>
+                    <span className="n">{x.label}<small>{LABEL[x.category] ?? x.category} · {x.count} paiements</small></span>
+                    <Trend t={x.trend} d={x.delta} />
+                    <span className="v">{money(x.total)}<small>par an</small></span>
+                  </li>
+                ))}
+              </ul>
+              {rec.merchants.length > 8 ? <button className="morelink" onClick={() => setMore(!more)}>{more ? 'Réduire' : `Voir les ${rec.merchants.length - 8} autres`}</button> : null}
+            </section>
+          ) : null}
+
+          {tab === 'exceptionnel' ? (
+            <section>
+              <p className="sub">{money(rec.totals.exceptional)} sur l’année: impôts, travaux et grosses dépenses ponctuelles.</p>
+              <ul className="rows">
+                {rec.oneOffs.slice(0, cut(rec.oneOffs.length)).map((x, i) => (
+                  <li key={i}>
+                    <span className="n">{x.label}<small>{dateFr(x.date)} · {LABEL[x.category] ?? x.category}{x.bien ? ` · ${x.bien}` : ''}</small></span>
+                    <span className="v">{money(x.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+              {rec.oneOffs.length > 8 ? <button className="morelink" onClick={() => setMore(!more)}>{more ? 'Réduire' : `Voir les ${rec.oneOffs.length - 8} autres`}</button> : null}
+            </section>
+          ) : null}
+
+          {tab === 'evolution' ? (
+            <section>
+              <p className="sub">Ce qui a le plus changé par rapport aux 12 mois précédents, fournisseur par fournisseur.</p>
+              {moving.length > 0 ? (
+                <ul className="rows">
+                  {moving.map((x) => (
+                    <li key={x.key}>
+                      <span className="n">{x.label}<small>{LABEL[x.category] ?? x.category}</small></span>
+                      <span className={'chip ' + ((x.trend ?? 0) > 0 ? 'up' : 'down')}>{pct(x.trend)}</span>
+                      <span className="v">{(x.delta ?? 0) > 0 ? '+' : ''}{money(x.delta ?? 0)}<small>par an</small></span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="muted small">Pas assez d’historique pour comparer: il faut deux ans de relevés.</p>}
+              {levers.length > 0 ? (
+                <>
+                  <h3 className="subtitle">À comparer ou renégocier</h3>
+                  <ul className="rows">
+                    {levers.map((x) => (
+                      <li key={x.key}>
+                        <span className="n">{x.label}<small>{LABEL[x.category] ?? x.category} · {x.cadence}</small></span>
+                        <span className="v">{money(x.perYear)}<small>par an</small></span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               ) : null}
-            </div>
-          <ul className="catlist">
-            {cats.map((c) => {
-              const v = catView === 'total' ? c.total : c.avg;
-              return (
-                <li key={c.key}>
-                  <span className="n">{LABEL[c.key] ?? c.key}</span>
-                  <span className="trend2">{c.trend !== null && Math.abs(c.trend) > 0.15 ? <span className={c.trend > 0 ? 'up' : 'down'}>{c.trend > 0 ? '+' : ''}{Math.round(c.trend * 100)} %</span> : null}</span>
-                  <span className="v">{money(v)}</span>
-                  <span className="b"><i style={{ width: `${(v / maxCat) * 100}%` }} /></span>
-                </li>
-              );
-            })}
-          </ul>
-          </details>
-          {prevYear.length > 0 ? <p className="muted small">Variation par rapport {prevLabel}, affichée au-dessus de 15 %.</p> : null}
-          {bienNames.length > 0 ? (
-            <>
-              <h3 className="subtitle">Immobilier</h3>
+            </section>
+          ) : null}
+
+          {tab === 'immo' ? (
+            <section>
               <div className="biens">
                 {bienNames.map((bien) => {
                   const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
@@ -375,11 +380,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   const works = Object.fromEntries(worksByBien)[bien] ?? 0;
                   return (
                     <div className="bien" key={bien}>
-                      <div className="bn">{bien}</div>
+                      <div className="bn">{bien}{home && !/domicile/i.test(bien) ? ' · domicile' : ''}</div>
                       <div className="bf">
-                        {home ? (
-                          <div><span>Charges</span><b>{money(v.charges)}</b></div>
-                        ) : (
+                        {home ? <div><span>Charges</span><b>{money(v.charges)}</b></div> : (
                           <>
                             <div><span>Loyers</span><b>{money(v.loyers)}</b></div>
                             <div><span>Charges</span><b>{money(v.charges)}</b></div>
@@ -392,7 +395,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   );
                 })}
               </div>
-            </>
+              {bienNames.length === 0 ? <p className="muted small">Ajoute tes biens dans Documents, « Mes biens ».</p> : null}
+            </section>
           ) : null}
         </>
       ) : null}
