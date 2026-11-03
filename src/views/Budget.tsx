@@ -394,6 +394,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                 {bienNames.map((bien) => {
                   const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
                   const home = (b.homes ?? []).includes(bien);
+                  const dec = state.decomptes.find((d) => d.bien === bien);
                   const items = [...rec.recurring.filter((x) => x.bien === bien).map((x) => ({ n: x.label, v: x.perYear })), ...rec.oneOffs.filter((x) => x.bien === bien && x.category === 'travaux').map((x) => ({ n: `Travaux, ${dateFr(x.date)}`, v: x.amount }))];
                   return (
                     <div className="bien" key={bien}>
@@ -403,6 +404,20 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                         {items.map((it, i) => <li key={i}><span>{it.n}</span><b>{money(it.v)}</b></li>)}
                         {!home ? <li className="net"><span>Net</span><b>{money(v.loyers - v.charges)}</b></li> : null}
                       </ul>
+                      {dec ? (
+                        <details className="decompte">
+                          <summary>Décompte de copropriété, {dateFr(dec.from)} au {dateFr(dec.to)}</summary>
+                          <ul className="mini">
+                            {dec.paid > 0 ? <li><span>Versé à la PPE</span><b>{money(dec.paid)}</b></li> : null}
+                            <li><span>Charges de l’exercice</span><b>{money(dec.total)}</b></li>
+                            {dec.paid > dec.total ? <li><span>Chauffage, provisions et fonds de rénovation</span><b>{money(dec.paid - dec.total)}</b></li> : null}
+                            {dec.solde !== null ? <li className="net"><span>{dec.solde >= 0 ? 'À recevoir' : 'À payer'}</span><b>{money(Math.abs(dec.solde))}</b></li> : null}
+                          </ul>
+                          <ul className="mini sm">
+                            {dec.lines.map((ln, i) => <li key={i}><span>{ln.label}</span><b>{money(ln.amount)}</b></li>)}
+                          </ul>
+                        </details>
+                      ) : null}
                     </div>
                   );
                 })}

@@ -166,3 +166,7 @@
 .mini li.net { border-top: 1px solid var(--line, rgba(0,0,0,.08)); margin-top: 4px; padding-top: 8px; color: var(--ink); }
 .mini li.net b { font-weight: 500; }
 .hero .big.xl { margin-bottom: 2px; }
+
+.decompte { margin-top: 10px; border-top: 1px solid var(--line, rgba(0,0,0,.08)); padding-top: 8px; }
+.decompte summary { cursor: pointer; font-size: 13px; color: var(--ink-2); }
+.mini.sm li { font-size: 12px; padding: 2px 0; }
