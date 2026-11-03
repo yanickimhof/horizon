@@ -4,7 +4,7 @@ import { api, fmt, type Db, type RecurringView, type State, type WatchStatus } f
 import '../budget.css';
 
 const CATS: [string, string][] = [
-  ['logement', 'Immobilier'], ['travaux', 'Travaux et rénovations'], ['impots', 'Impôts'], ['assurances', 'Assurances'], ['sante', 'Santé'], ['alimentation', 'Alimentation'],
+  ['logement', 'Logement, intérêts et charges'], ['travaux', 'Travaux et rénovations'], ['impots', 'Impôts'], ['assurances', 'Assurances'], ['sante', 'Santé'], ['alimentation', 'Alimentation'],
   ['restaurants', 'Restaurants et cafés'], ['abonnements', 'Abonnements numériques'], ['telecom', 'Télécoms et hébergement'], ['energie', 'Énergie, eau, chauffage'],
   ['vehicule', 'Véhicules'], ['transports', 'Transports publics et taxis'], ['voyages', 'Voyages et vacances'], ['loisirs', 'Loisirs, sport, culture'],
   ['vetements', 'Vêtements'], ['maison', 'Maison, équipement'], ['enfants', 'Enfants et études'], ['famille', 'Famille'], ['dons', 'Cadeaux et dons'],
@@ -264,14 +264,15 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const monthsN = Math.max(rec.months.length, 1);
   const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k), ...rec.works.map((w) => w.bien ?? 'À rattacher')])];
   const monthShort = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('fr-CH', { month: 'short' }).replace('.', '');
-  const priorLabel = (() => {
-    const pm = rec.priorMonths;
+  const rangeLabel = (pm: string[]) => {
     if (pm.length === 0) return '';
     const a = pm[0];
     const z = pm[pm.length - 1];
     if (a === z) return `${monthShort(a)} ${a.slice(0, 4)}`;
     return a.slice(0, 4) === z.slice(0, 4) ? `${monthShort(a)} à ${monthShort(z)} ${z.slice(0, 4)}` : `${monthShort(a)} ${a.slice(0, 4)} à ${monthShort(z)} ${z.slice(0, 4)}`;
-  })();
+  };
+  const priorLabel = rangeLabel(rec.priorMonths);
+  const nowLabel = rangeLabel(rec.pairMonths);
   const spendYear = rec.totals.recurring + rec.totals.daily + rec.totals.exceptional + rec.totals.works;
   const resteM = (rec.income - spendYear) / monthsN;
   const barMax = Math.max(rec.income, spendYear, 1);
@@ -429,12 +430,13 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       <p className="tlcmp">{rec.comparedMonths > 0 ? `Les ↑ ↓ comparent à la même période: ${priorLabel}.` : 'Pas de comparaison: les relevés ne remontent pas assez loin.'}</p>
     </div>
   );
-  const Cmp = ({ now, before, goodUp = false }: { now: number; before: number | null; goodUp?: boolean }) => {
-    if (before === null || before <= 0) return <p className="cmpline">Pas de comparaison possible</p>;
+  const Cmp = ({ now, before, goodUp = false }: { now: number | null; before: number | null; goodUp?: boolean }) => {
+    if (now === null || before === null || before <= 0) return <p className="cmpline">Pas de comparaison possible</p>;
     const t = now / before - 1;
-    if (Math.abs(t) < 0.02) return <p className="cmpline">Stable · {money(before)} en {priorLabel}</p>;
+    const text = `${money(before)} en ${priorLabel}, contre ${money(now)} en ${nowLabel}`;
+    if (Math.abs(t) < 0.02) return <p className="cmpline">Stable · {text}</p>;
     const good = goodUp ? t > 0 : t < 0;
-    return <p className={'cmpline ' + (good ? 'down' : 'up')}>{t > 0 ? '↑' : '↓'} {pct(t)} · {money(before)} en {priorLabel}</p>;
+    return <p className={'cmpline ' + (good ? 'down' : 'up')}>{t > 0 ? '↑' : '↓'} {pct(t)} · {text}</p>;
   };
   type Item = { id: string; name: string; amount: number; cat: string; prior?: number | null; trend?: number | null; delta?: number | null; facts: string[]; lines: { date: string; amount: number; account: string; text: string }[] };
   const [sortBy, setSortBy] = useState<'montant' | 'nom'>('montant');
@@ -545,7 +547,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                 <div className="side">
                   <p className="lbl">Gains</p>
                   <p className="amt">{money(rec.income)}</p>
-                  <Cmp now={rec.income} before={rec.compare.income} goodUp />
+                  <Cmp now={rec.compare.incomeNow} before={rec.compare.income} goodUp />
                   <ul className="split">
                     {rec.incomeBy.map((x) => (
                       <li key={x.label}><span>{x.label}</span><b>{money(x.amount)}</b><i style={{ width: `${rec.income > 0 ? Math.min(100, (x.amount / rec.income) * 100) : 0}%`, background: '#2f7d4f' }} /></li>
@@ -556,7 +558,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                 <div className="side">
                   <p className="lbl">Dépenses</p>
                   <p className="amt">{money(spendYear)}</p>
-                  <Cmp now={spendYear} before={rec.compare.spend} />
+                  <Cmp now={rec.compare.spendNow} before={rec.compare.spend} />
                   <ul className="split">
                     {parts.map((x) => (
                       <li key={x.k}><button onClick={() => { setTab(x.k); setMore(false); setOpen(''); }}><span>{x.label}</span><b>{money(x.v)}</b></button><i style={{ width: `${spendYear > 0 ? Math.min(100, (x.v / spendYear) * 100) : 0}%`, background: x.color }} /></li>
@@ -570,13 +572,13 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   <ul className="rows">
                     {rec.categories.slice(0, 3).map((c) => (
                       <li key={c.category} className="plain">
-                        <span className="n">{LABEL[c.category] ?? c.category}<small>{money(c.prior)} en {priorLabel} → {money(c.perYear)}</small></span>
+                        <span className="n">{LABEL[c.category] ?? c.category}<small>{money(c.prior)} en {priorLabel} → {money(c.perYear)} en {nowLabel}</small></span>
                         <span className={'delta ' + (c.delta > 0 ? 'up' : 'down')}>{c.delta > 0 ? '+' : ''}{money(c.delta)}</span>
                       </li>
                     ))}
                     {moving.slice(0, 4).map((x) => (
                       <li key={x.key} className="plain">
-                        <span className="n">{x.label}<small>{x.prior !== null && x.prior !== undefined ? `${money(x.prior)} en ${priorLabel} → ${money(x.perYear)}` : ''}</small></span>
+                        <span className="n">{x.label}<small>{x.prior !== null && x.prior !== undefined ? `${money(x.prior)} en ${priorLabel} → ${money(x.now ?? x.perYear)} en ${nowLabel}` : ''}</small></span>
                         <span className={'delta ' + ((x.delta ?? 0) > 0 ? 'up' : 'down')}>{(x.delta ?? 0) > 0 ? '+' : ''}{money(x.delta ?? 0)}</span>
                       </li>
                     ))}
