@@ -277,10 +277,10 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const resteM = (rec.income - spendYear) / monthsN;
   const barMax = Math.max(rec.income, spendYear, 1);
   const parts: { k: typeof tab; label: string; v: number; color: string }[] = [
-    { k: 'revient', label: 'Ce qui revient', v: rec.totals.recurring, color: '#534AB7' },
-    { k: 'quotidien', label: 'Le quotidien', v: rec.totals.daily, color: '#0F6E56' },
-    { k: 'exceptionnel', label: 'Exceptionnel', v: rec.totals.exceptional, color: '#b7791f' },
-    { k: 'immo', label: 'Travaux et frais des biens', v: rec.totals.works, color: '#8a8a85' },
+    { k: 'revient', label: 'Ce qui revient', v: rec.totals.recurring, color: 'var(--c-cash)' },
+    { k: 'quotidien', label: 'Le quotidien', v: rec.totals.daily, color: 'var(--c-securities)' },
+    { k: 'exceptionnel', label: 'Exceptionnel', v: rec.totals.exceptional, color: 'var(--c-real_estate)' },
+    { k: 'immo', label: 'Travaux et frais des biens', v: rec.totals.works, color: 'var(--c-pension)' },
   ];
   const pct = (t: number | null) => (t === null ? '' : `${t > 0 ? '+' : ''}${Math.round(t * 100)} %`);
   const Trend = ({ t, d }: { t: number | null; d: number | null }) => (t !== null && d !== null && Math.abs(t) >= 0.1 && Math.abs(d) >= 100 ? <span className={'chip ' + (t > 0 ? 'up' : 'down')} title={`Par rapport aux mêmes mois un an plus tôt (${rec.comparedMonths} mois)`}>{pct(t)}</span> : null);
@@ -426,7 +426,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         <button className={period === '12' ? 'on' : ''} onClick={() => { setPeriod('12'); setOpen(''); setMore(false); }}>12 mois</button>
         <span>{periodLabel}</span>
       </div>
-      <p className="tlcap"><span><b style={{ background: '#5aa877' }} />Gains</span><span><b style={{ background: '#534AB7' }} />Dépenses</span></p>
+      <p className="tlcap"><span><b style={{ background: 'var(--pos)' }} />Gains</span><span><b style={{ background: 'var(--c-cash)' }} />Dépenses</span></p>
       <p className="tlcmp">{rec.comparedMonths > 0 ? `Les ↑ ↓ comparent à la même période: ${priorLabel}.` : 'Pas de comparaison: les relevés ne remontent pas assez loin.'}</p>
     </div>
   );
@@ -550,7 +550,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   <Cmp now={rec.compare.incomeNow} before={rec.compare.income} goodUp />
                   <ul className="split">
                     {rec.incomeBy.map((x) => (
-                      <li key={x.label}><span>{x.label}</span><b>{money(x.amount)}</b><i style={{ width: `${rec.income > 0 ? Math.min(100, (x.amount / rec.income) * 100) : 0}%`, background: '#2f7d4f' }} /></li>
+                      <li key={x.label}><span>{x.label}</span><b>{money(x.amount)}</b><i style={{ width: `${rec.income > 0 ? Math.min(100, (x.amount / rec.income) * 100) : 0}%`, background: 'var(--pos)' }} /></li>
                     ))}
                   </ul>
                   {rec.incomeOnce > 0 ? <p className="muted small">Hors habituel, non compté: {money(rec.incomeOnce)}</p> : null}
