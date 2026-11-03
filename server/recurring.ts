@@ -1,5 +1,6 @@
 import type { Ledger } from './ledger';
 import { isGenericPayee, normalizeLabel } from './statements';
+import { supplierOf } from './supplier';
 import { rateFor } from '../src/engine/fx';
 
 /**
@@ -115,22 +116,22 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
   const spend = rows.filter((r) => r.amount < 0 && !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))));
   const income = rows.filter((r) => r.category === 'revenu' && r.amount > 0 && inWindow(r.date.slice(0, 7))).reduce((t, r) => t + toChf(r.amount, r.currency), 0);
 
-  // Un fournisseur: son nom, sauf libellé générique (« Paiement », « Débit LSV »), où le début du libellé complet fait foi.
-  const keyOf = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : normalizeLabel(r.label.split(',').slice(0, 2).join(' ')).slice(0, 44));
+  // Un fournisseur est ce qu'on dirait à voix haute: « Migros », « CSS », « Intérêts hypothécaires, Osiris ».
+  const hh = l.current().find((x) => x.key === 'household');
+  const selfNames = [
+    ...(typeof hh?.data.name === 'string' ? [normalizeLabel(String(hh.data.name))] : []),
+    ...(Array.isArray(hh?.data.members) ? (hh!.data.members as { name?: unknown; role?: unknown }[]).filter((m) => m.role !== 'child' && typeof m.name === 'string').map((m) => normalizeLabel(String(m.name))) : []),
+  ].filter((n) => n.length >= 3);
+  const supplier = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name);
   type G = { key: string; label: string; rows: Row[]; cat: Map<string, number> };
   const groups = new Map<string, G>();
   for (const r of spend) {
-    const k = keyOf(r);
-    const g = groups.get(k) ?? { key: k, label: r.label.split(',')[0].trim().slice(0, 48) || k, rows: [], cat: new Map<string, number>() };
+    const name = supplier(r);
+    const k = normalizeLabel(name);
+    const g = groups.get(k) ?? { key: k, label: isGenericPayee(r.label) ? r.label.slice(0, 40) : name, rows: [], cat: new Map<string, number>() };
     g.rows.push(r);
     g.cat.set(r.category, (g.cat.get(r.category) ?? 0) + Math.abs(toChf(r.amount, r.currency)));
     groups.set(k, g);
-  }
-  // Deux fournisseurs de même nom (une personne, à deux adresses) se distinguent par leur adresse.
-  const firstParts = new Map<string, number>();
-  for (const g of groups.values()) firstParts.set(g.label, (firstParts.get(g.label) ?? 0) + 1);
-  for (const g of groups.values()) {
-    if ((firstParts.get(g.label) ?? 0) > 1) g.label = `${g.label}, ${g.rows[0].label.split(',')[1]?.trim().slice(0, 28) ?? ''}`.replace(/, $/, '');
   }
   const sum = (rs: Row[], f: (m: string) => boolean) => rs.filter((r) => f(r.date.slice(0, 7))).reduce((t, r) => t - toChf(r.amount, r.currency), 0);
   const topCat = (g: G) => [...g.cat.entries()].sort((a, b) => b[1] - a[1])[0][0];
@@ -172,7 +173,7 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     for (const r of win) {
       const chf = -toChf(r.amount, r.currency);
       if (ONE_OFF_CATEGORIES.has(r.category) || chf >= 1500) {
-        oneOffs.push({ label: (isGenericPayee(r.label) ? r.label : r.label.split(',')[0]).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien });
+        oneOffs.push({ label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien });
         totals.exceptional += chf;
       } else {
         dailyTotal += chf;
