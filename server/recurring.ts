@@ -132,6 +132,8 @@ const LOOSE = new Set(['logement', 'assurances', 'energie', 'telecom', 'banque',
 const FIXED = new Set(['logement', 'assurances', 'energie', 'telecom', 'abonnements', 'banque', 'vehicule', 'enfants', 'famille']);
 // Ce qu'on peut vraiment se demander d'éviter: abonnements et frais; achats répétés dans les mêmes commerces de plaisir ou de confort.
 const AVOIDABLE_FIXED = new Set(['abonnements', 'banque']);
+// Obligatoire ou utile, même s'il se répète: redevance, transports publics, bricolage de la maison.
+const NOT_AVOIDABLE = /serafe|billag|\bcff\b|\bsbb\b|hornbach|bauhaus|brico|leroy merlin/i;
 const AVOIDABLE_HABIT = new Set(['restaurants', 'loisirs', 'vetements', 'maison', 'quotidien', 'autre', 'abonnements']);
 const LEVER = new Set(['assurances', 'telecom', 'abonnements', 'banque', 'energie']);
 const ONE_OFF_CATEGORIES = new Set(['impots', 'travaux']);
@@ -293,7 +295,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     if (isFixed || isStable || isAnnual) {
       recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, prior: priorScaled, now: nowPair, lever: LEVER.has(category), lines: toLines(chosen), bases: [...g.bases] });
       totals.recurring += amount;
-      if (AVOIDABLE_FIXED.has(category) && !generic) avoidable.push({ key: g.key, label: g.label, category, kind: category === 'banque' ? 'frais' : 'abonnement', perYear: amount, count: chosen.length, perMonth: amount / sel.length, bases: [...g.bases] });
+      if (AVOIDABLE_FIXED.has(category) && !generic && !NOT_AVOIDABLE.test(g.label)) avoidable.push({ key: g.key, label: g.label, category, kind: category === 'banque' ? 'frais' : 'abonnement', perYear: amount, count: chosen.length, perMonth: amount / sel.length, bases: [...g.bases] });
       continue;
     }
     // Le reste. Un travail ou un frais lié à un bien va dans l'immobilier. Un impôt ou une grosse dépense inhabituelle est exceptionnel.
@@ -317,7 +319,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       }
     }
     totals.daily += dailyTotal;
-    if (!generic && AVOIDABLE_HABIT.has(category) && dailyRows.length >= 5 && dailyTotal >= 150 * Math.min(1, sel.length / 12)) avoidable.push({ key: g.key, label: g.label, category, kind: 'habitude', perYear: dailyTotal, count: dailyRows.length, perMonth: dailyTotal / sel.length, bases: [...g.bases] });
+    if (!generic && !NOT_AVOIDABLE.test(g.label) && AVOIDABLE_HABIT.has(category) && dailyRows.length >= 5 && dailyTotal >= 150 * Math.min(1, sel.length / 12)) avoidable.push({ key: g.key, label: g.label, category, kind: category === 'abonnements' ? 'abonnement' : 'habitude', perYear: dailyTotal, count: dailyRows.length, perMonth: dailyTotal / sel.length, bases: [...g.bases] });
     if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: dailyRows.length, trend, delta, prior: priorScaled, now: nowPair, lines: toLines(dailyRows), bases: [...g.bases] });
   }
 
