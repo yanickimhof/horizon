@@ -37,7 +37,12 @@ export function parseDecompte(text: string): { from: string; to: string; lines: 
     if (start < 0 || end < 0 || end < start) continue;
     const body = rest.slice(start, end).replace(/^copropri[ée]t[ée]\.\s*/, '');
     const lines: DecompteLine[] = [];
-    for (const l of body.matchAll(/([A-Za-zÀ-ÿ][^\d]*?)\s{2,}(-?[\d'’]+\.\d{2})/g)) lines.push({ label: l[1].replace(/\s+/g, ' ').trim(), amount: num(l[2]) });
+    // Les espaces sont écrasés selon la lecture du PDF: on découpe aux montants, ce qui précède un montant est sa rubrique.
+    const parts = body.split(/(-?[\d'’]+\.\d{2})(?!\d)/);
+    for (let i = 0; i + 1 < parts.length; i += 2) {
+      const label = parts[i].replace(/\s+/g, ' ').trim();
+      if (label.length >= 3 && /[A-Za-zÀ-ÿ]/.test(label)) lines.push({ label, amount: num(parts[i + 1]) });
+    }
     const total = rest.slice(end).match(/TOTAL\s+(-?[\d'’]+\.\d{2})/);
     if (lines.length > 0 && total) out.push({ from: iso(m[1]), to: iso(m[2]), lines, total: num(total[1]) });
   }
