@@ -122,7 +122,19 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     ...(typeof hh?.data.name === 'string' ? [normalizeLabel(String(hh.data.name))] : []),
     ...(Array.isArray(hh?.data.members) ? (hh!.data.members as { name?: unknown; role?: unknown }[]).filter((m) => m.role !== 'child' && typeof m.name === 'string').map((m) => normalizeLabel(String(m.name))) : []),
   ].filter((n) => n.length >= 3);
-  const supplier = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name);
+  // Noms choisis par l'utilisateur (réglage « budget.fournisseurs »: liste de { re, name }), prioritaires sur la lecture automatique.
+  const aliases = (() => {
+    try {
+      return (JSON.parse(l.getSetting('budget.fournisseurs') || '[]') as { re: string; name: string }[]).filter((a) => a.re && a.name);
+    } catch {
+      return [];
+    }
+  })();
+  const supplier = (r: Row): string => {
+    const hit = aliases.find((a) => new RegExp(a.re, 'i').test(r.label));
+    if (hit) return hit.name;
+    return isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name;
+  };
   type G = { key: string; label: string; rows: Row[]; cat: Map<string, number> };
   const groups = new Map<string, G>();
   for (const r of spend) {
