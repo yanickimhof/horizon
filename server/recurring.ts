@@ -132,8 +132,8 @@ const LOOSE = new Set(['logement', 'assurances', 'energie', 'telecom', 'banque',
 const FIXED = new Set(['logement', 'assurances', 'energie', 'telecom', 'abonnements', 'banque', 'vehicule', 'enfants', 'famille']);
 // Ce qu'on peut vraiment se demander d'éviter: abonnements et frais; achats répétés dans les mêmes commerces de plaisir ou de confort.
 const AVOIDABLE_FIXED = new Set(['abonnements', 'banque']);
-// Obligatoire ou utile, même s'il se répète: redevance, transports publics, bricolage de la maison.
-const NOT_AVOIDABLE = /serafe|billag|\bcff\b|\bsbb\b|hornbach|bauhaus|brico|leroy merlin/i;
+// Obligatoire ou utile, même s'il se répète: redevance, paiements entre personnes (Twint), transports publics, bricolage de la maison.
+const NOT_AVOIDABLE = /twint|serafe|billag|\bcff\b|\bsbb\b|hornbach|bauhaus|brico|leroy merlin/i;
 const AVOIDABLE_HABIT = new Set(['restaurants', 'loisirs', 'vetements', 'maison', 'quotidien', 'autre', 'abonnements']);
 const LEVER = new Set(['assurances', 'telecom', 'abonnements', 'banque', 'energie']);
 const ONE_OFF_CATEGORIES = new Set(['impots', 'travaux']);
