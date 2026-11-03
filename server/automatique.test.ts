@@ -237,3 +237,25 @@ describe('remboursements', () => {
     expect(Math.round(a.perYear)).toBe(2700);
   });
 });
+
+describe('quotidien, exceptionnel et immobilier ne se recoupent pas', () => {
+  it('range un travail dans l’immobilier, un impôt et une grosse dépense dans l’exceptionnel, le reste dans le quotidien', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    for (let i = 1; i <= 6; i++) rows.push([`2026-0${i}-04`, 'Epicerie Exemple, Echallens CH', -90]);
+    rows.push(['2026-02-10', 'Epicerie Exemple, Echallens CH', -1200]);
+    rows.push(['2026-03-15', 'Artisan Exemple SA, 1040 Echallens Facture', -2000]);
+    rows.push(['2026-04-20', 'Etat de Vaud Impôts, 1014 Lausanne Acompte', -800]);
+    rows.push(['2026-05-02', 'Magasin de meubles Exemple, Lausanne CH', -450]);
+    storeStatements(l, [stmt('Compte', rows)], 'c.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'alimentation' WHERE label LIKE 'Epicerie%'");
+    l.raw.exec("UPDATE budget_txs SET category = 'travaux', bien = 'Villa' WHERE label LIKE 'Artisan%'");
+    l.raw.exec("UPDATE budget_txs SET category = 'impots' WHERE label LIKE 'Etat de Vaud%'");
+    l.raw.exec("UPDATE budget_txs SET category = 'maison' WHERE label LIKE 'Magasin%'");
+    const v = recurringView(l, new Date('2026-08-15'), '2026');
+    expect(v.works.map((w) => w.amount)).toEqual([2000]);
+    expect(v.oneOffs.map((o) => o.category).sort()).toEqual(['alimentation', 'impots', 'maison']);
+    expect(v.merchants.find((m) => m.label.startsWith('Epicerie'))!.total).toBe(540);
+    expect(v.totals.works).toBe(2000);
+  });
+});

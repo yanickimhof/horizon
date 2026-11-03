@@ -189,11 +189,11 @@ export const fmt = {
 
 export const RING_LABELS = ['3 mois', '1 an', '5 ans', '20 ans'];
 
-export interface RecurringItem { key: string; label: string; category: string; bien: string | null; cadence: 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel' | 'régulier'; perYear: number; perMonth: number; count: number; last: string; trend: number | null; delta: number | null; lever: boolean; lines: Line[] }
-export interface Merchant { key: string; label: string; category: string; total: number; count: number; trend: number | null; delta: number | null; lines: Line[] }
+export interface RecurringItem { key: string; label: string; category: string; bien: string | null; cadence: 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel' | 'régulier'; perYear: number; perMonth: number; count: number; last: string; trend: number | null; delta: number | null; prior: number | null; lever: boolean; lines: Line[] }
+export interface Merchant { key: string; label: string; category: string; total: number; count: number; trend: number | null; delta: number | null; prior: number | null; lines: Line[] }
 export interface Line { date: string; amount: number; account: string; text: string }
 export interface OneOff { label: string; date: string; amount: number; category: string; bien: string | null; text: string }
-export interface CategoryMove { category: string; perYear: number; trend: number; delta: number }
-export interface RecurringView { categories: CategoryMove[]; months: string[]; comparedMonths: number; income: number; recurring: RecurringItem[]; merchants: Merchant[]; oneOffs: OneOff[]; totals: { recurring: number; daily: number; exceptional: number } }
+export interface CategoryMove { category: string; perYear: number; trend: number; delta: number; prior: number }
+export interface RecurringView { categories: CategoryMove[]; works: OneOff[]; months: string[]; comparedMonths: number; income: number; recurring: RecurringItem[]; merchants: Merchant[]; oneOffs: OneOff[]; totals: { recurring: number; daily: number; exceptional: number; works: number } }
 
 export interface Decompte { bien: string | null; from: string; to: string; total: number; lines: { label: string; amount: number }[]; solde: number | null; paid: number; settled: string | null }

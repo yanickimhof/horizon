@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent, type ReactElement } from 'react';
 import { ArrowDownRight, ArrowLeft, ArrowUpRight, Building2, FolderOpen, Repeat, ShoppingBasket, TrendingUp, Zap } from 'lucide-react';
 import { api, fmt, type Db, type RecurringView, type State, type WatchStatus } from '../api';
 import '../budget.css';
@@ -59,8 +59,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const [sel, setSel] = useState('');
   const years = useMemo(() => [...new Set(full.filter((m) => m.spend > 0).map((m) => m.month.slice(0, 4)))].filter((y) => full.filter((m) => m.month.startsWith(y) && m.spend > 0).length >= 3).sort().reverse(), [full]);
   const isMonth = /^\d{4}-\d{2}$/.test(period);
-  const yearOk = period === '12' || isMonth || years.includes(period);
-  const used = isMonth ? full.filter((m) => m.month === period) : period === '12' || !yearOk ? full.slice(-12) : full.filter((m) => m.month.startsWith(period));
+  const rangeM = period.match(/^(\d{4}-\d{2})\.\.(\d{4}-\d{2})$/);
+  const yearOk = period === '12' || isMonth || !!rangeM || years.includes(period);
+  const used = rangeM ? full.filter((m) => m.month >= rangeM[1] && m.month <= rangeM[2]) : isMonth ? full.filter((m) => m.month === period) : period === '12' || !yearOk ? full.slice(-12) : full.filter((m) => m.month.startsWith(period));
   // Comparaison à période égale: mêmes mois un an plus tôt, ou les 12 mois précédents. Jamais une année entière contre une année entamée.
   const prevYear = (() => {
     if (period === '12' || !yearOk) return full.length >= 24 ? full.slice(-24, -12) : [];
@@ -72,7 +73,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const prevLabel = period === '12' || !yearOk ? 'aux 12 mois précédents' : `à la même période en ${Number(period.slice(0, 4)) - 1}`;
   const curYear = last ? last.month.slice(0, 4) : '';
   const yearName = (y: string) => (y === curYear && last && last.month.slice(5) !== '12' ? `${y} à ce jour` : y);
-  const periodLabel = isMonth ? monthName(period) : period === '12' || !yearOk ? `${used.length} derniers mois` : yearName(period);
+  const periodLabel = rangeM ? `${monthName(rangeM[1])} à ${monthName(rangeM[2])}` : isMonth ? monthName(period) : period === '12' || !yearOk ? `${used.length} derniers mois` : yearName(period);
   // Une dépense payée une année mais qui appartient à une autre (solde d'impôts) suit son année dans la vue par année.
   const adj = useMemo(() => {
     const byCat: Record<string, number> = {};
@@ -261,13 +262,14 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const [tab, setTab] = useState<'revient' | 'quotidien' | 'exceptionnel' | 'evolution' | 'immo'>('revient');
   const [more, setMore] = useState(false);
   const monthsN = Math.max(rec.months.length, 1);
-  const spendYear = rec.totals.recurring + rec.totals.daily + rec.totals.exceptional;
+  const spendYear = rec.totals.recurring + rec.totals.daily + rec.totals.exceptional + rec.totals.works;
   const resteM = (rec.income - spendYear) / monthsN;
   const barMax = Math.max(rec.income, spendYear, 1);
   const parts: { k: typeof tab; label: string; v: number; color: string }[] = [
     { k: 'revient', label: 'Ce qui revient', v: rec.totals.recurring, color: '#534AB7' },
     { k: 'quotidien', label: 'Le quotidien', v: rec.totals.daily, color: '#0F6E56' },
     { k: 'exceptionnel', label: 'Exceptionnel', v: rec.totals.exceptional, color: '#b7791f' },
+    { k: 'immo', label: 'Travaux et frais des biens', v: rec.totals.works, color: '#8a8a85' },
   ];
   const pct = (t: number | null) => (t === null ? '' : `${t > 0 ? '+' : ''}${Math.round(t * 100)} %`);
   const Trend = ({ t, d }: { t: number | null; d: number | null }) => (t !== null && d !== null && Math.abs(t) >= 0.1 && Math.abs(d) >= 100 ? <span className={'chip ' + (t > 0 ? 'up' : 'down')} title={`Par rapport aux mêmes mois un an plus tôt (${rec.comparedMonths} mois)`}>{pct(t)}</span> : null);
@@ -297,52 +299,136 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       setErr(e instanceof Error ? e.message : String(e));
     }
   };
-  const Row = ({ id, name, amount, chip, facts, lines }: { id: string; name: string; amount: string; chip?: ReactElement | null; facts: string[]; lines: { date: string; amount: number; account: string; text: string }[] }) => (
-    <li className={open === id ? 'open' : ''}>
-      <button className="rowbtn" onClick={() => setOpen(open === id ? '' : id)} aria-expanded={open === id}>
-        <span className="n">{name}</span>
-        {chip}
-        <span className="v">{amount}</span>
-      </button>
-      {open === id ? (
-        <div className="detail">
-          <p className="facts">{facts.filter(Boolean).join(' · ')}</p>
-          {(() => {
-            const seed = (lines[0]?.text ?? '').split(',')[0].trim();
-            if (!seed || tooGeneral(seed)) return null;
-            return fix?.id === id ? (
-              <div className="fixform">
-                <input value={fix.name} onChange={(e) => setFix({ ...fix, name: e.target.value })} aria-label="Nom" placeholder="Nom du fournisseur" />
-                <select value={fix.category} onChange={(e) => setFix({ ...fix, category: e.target.value })} aria-label="Catégorie">
-                  <option value="">Garder la catégorie</option>
-                  {CATS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-                <button className="btn" onClick={() => saveFix(seed)}>Enregistrer</button>
-                <button className="btn small" onClick={() => setFix(null)}>Annuler</button>
-              </div>
-            ) : (
-              <button className="link" onClick={() => setFix({ id, name, category: '' })}>Corriger le nom ou la catégorie</button>
-            );
-          })()}
-          <ul>
-            {lines.map((ln, i) => <li key={i}><span>{dateFr(ln.date)}</span><span className="t">{ln.text}</span><b>{money(ln.amount)}</b></li>)}
-          </ul>
-        </div>
-      ) : null}
-    </li>
+  const tl = full.slice(-24);
+  const tlMax = Math.max(1, ...tl.map((m) => m.spend));
+  const selMonths = new Set(rec.months);
+  const [anchor, setAnchor] = useState('');
+  const pickMonth = (e: MouseEvent, m: string) => {
+    if (e.shiftKey && anchor && anchor !== m) {
+      const [a, z] = anchor < m ? [anchor, m] : [m, anchor];
+      setPeriod(`${a}..${z}`);
+    } else if (period === m) {
+      setPeriod('12');
+    } else {
+      setPeriod(m);
+      setAnchor(m);
+    }
+    setOpen('');
+    setMore(false);
+  };
+  const timeline = (
+    <div className="timeline">
+      <div className="tlbars" role="group" aria-label="Choisir une période">
+        {tl.map((m) => (
+          <button key={m.month} className={selMonths.has(m.month) ? 'on' : ''} onClick={(e) => pickMonth(e, m.month)} title={`${monthName(m.month)}, sorties ${money(m.spend)}`} aria-label={monthName(m.month)} aria-pressed={selMonths.has(m.month)}>
+            <i style={{ height: `${Math.max(6, (m.spend / tlMax) * 100)}%` }} />
+          </button>
+        ))}
+      </div>
+      <div className="tlyears">
+        {tl.map((m, i) => (
+          <span key={m.month}>{m.month.slice(5) === '01' || i === 0 ? <button onClick={() => { setPeriod(m.month.slice(0, 4)); setOpen(''); setMore(false); }}>{m.month.slice(0, 4)}</button> : null}</span>
+        ))}
+      </div>
+      <div className="tllabel">
+        <button className={period === '12' ? 'on' : ''} onClick={() => { setPeriod('12'); setOpen(''); setMore(false); }}>12 mois</button>
+        <span>{periodLabel}</span>
+      </div>
+    </div>
   );
-  const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k)])];
+  type Item = { id: string; name: string; amount: number; cat: string; prior?: number | null; trend?: number | null; delta?: number | null; facts: string[]; lines: { date: string; amount: number; account: string; text: string }[] };
+  const [sortBy, setSortBy] = useState<'montant' | 'nom'>('montant');
+  const [groupBy, setGroupBy] = useState<Record<string, boolean>>({ exceptionnel: true });
+  const [openGroup, setOpenGroup] = useState('');
+  const note = (it: Item) => (it.trend !== null && it.trend !== undefined && it.delta !== null && it.delta !== undefined && it.prior !== null && it.prior !== undefined && Math.abs(it.trend) >= 0.1 && Math.abs(it.delta) >= 100 ? { text: `${it.trend > 0 ? '↑' : '↓'} ${pct(it.trend)} · avant ${money(it.prior)}`, tone: it.trend > 0 ? 'up' : 'down' } : null);
+  const Row = ({ it }: { it: Item }) => {
+    const n = note(it);
+    return (
+      <li className={open === it.id ? 'open' : ''}>
+        <button className="rowbtn" onClick={() => setOpen(open === it.id ? '' : it.id)} aria-expanded={open === it.id}>
+          <span className="n">{it.name}{n ? <small className={'chg ' + n.tone}>{n.text}</small> : null}</span>
+          <span className="v">{money(it.amount)}</span>
+        </button>
+        {open === it.id ? (
+          <div className="detail">
+            <p className="facts">{it.facts.filter(Boolean).join(' · ')}</p>
+            {(() => {
+              const seed = (it.lines[0]?.text ?? '').split(',')[0].trim();
+              if (!seed || tooGeneral(seed)) return null;
+              return fix?.id === it.id ? (
+                <div className="fixform">
+                  <input value={fix.name} onChange={(e) => setFix({ ...fix, name: e.target.value })} aria-label="Nom" placeholder="Nom du fournisseur" />
+                  <select value={fix.category} onChange={(e) => setFix({ ...fix, category: e.target.value })} aria-label="Catégorie">
+                    <option value="">Garder la catégorie</option>
+                    {CATS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                  <button className="btn" onClick={() => saveFix(seed)}>Enregistrer</button>
+                  <button className="btn small" onClick={() => setFix(null)}>Annuler</button>
+                </div>
+              ) : (
+                <button className="link" onClick={() => setFix({ id: it.id, name: it.name, category: '' })}>Corriger le nom ou la catégorie</button>
+              );
+            })()}
+            <ul>
+              {it.lines.map((ln, i) => <li key={i}><span>{dateFr(ln.date)}</span><span className="t">{ln.text}</span><b>{money(ln.amount)}</b></li>)}
+            </ul>
+          </div>
+        ) : null}
+      </li>
+    );
+  };
+  const sorter = (a: { name: string; amount: number }, b: { name: string; amount: number }) => (sortBy === 'nom' ? a.name.localeCompare(b.name, 'fr') : b.amount - a.amount);
+  const ListView = ({ tabKey, items }: { tabKey: string; items: Item[] }) => {
+    const grouped = !!groupBy[tabKey];
+    const sorted = [...items].sort(sorter);
+    const shown = more ? sorted : sorted.slice(0, 8);
+    const groups = grouped ? Object.entries(items.reduce<Record<string, Item[]>>((t, x) => ({ ...t, [x.cat]: [...(t[x.cat] ?? []), x] }), {})).map(([cat, list]) => ({ cat, name: LABEL[cat] ?? cat, amount: list.reduce((t, x) => t + x.amount, 0), list: [...list].sort(sorter) })).sort(sorter) : [];
+    return (
+      <>
+        <div className="listtools">
+          <div className="seg" role="group" aria-label="Tri">
+            <button className={sortBy === 'montant' ? 'on' : ''} onClick={() => setSortBy('montant')}>Montant</button>
+            <button className={sortBy === 'nom' ? 'on' : ''} onClick={() => setSortBy('nom')}>A–Z</button>
+          </div>
+          <div className="seg" role="group" aria-label="Regroupement">
+            <button className={!grouped ? 'on' : ''} onClick={() => setGroupBy({ ...groupBy, [tabKey]: false })}>Liste</button>
+            <button className={grouped ? 'on' : ''} onClick={() => setGroupBy({ ...groupBy, [tabKey]: true })}>Par catégorie</button>
+          </div>
+        </div>
+        {grouped ? (
+          <ul className="rows">
+            {groups.map((g) => (
+              <li key={g.cat} className={openGroup === tabKey + g.cat ? 'open' : ''}>
+                <button className="rowbtn" onClick={() => setOpenGroup(openGroup === tabKey + g.cat ? '' : tabKey + g.cat)} aria-expanded={openGroup === tabKey + g.cat}>
+                  <span className="n">{g.name}<small>{plural(g.list.length, 'ligne')}</small></span>
+                  <span className="v">{money(g.amount)}</span>
+                </button>
+                {openGroup === tabKey + g.cat ? <ul className="rows sub">{g.list.map((it) => <Row key={it.id} it={it} />)}</ul> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <>
+            <ul className="rows">{shown.map((it) => <Row key={it.id} it={it} />)}</ul>
+            {items.length > 8 ? <button className="morelink" onClick={() => setMore(!more)}>{more ? 'Réduire' : `Voir les ${items.length - 8} autres`}</button> : null}
+          </>
+        )}
+      </>
+    );
+  };
+  const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k), ...rec.works.map((w) => w.bien ?? 'À rattacher')])];
   const maxCat = Math.max(1, ...cats.map((c) => (catView === 'total' ? c.total : c.avg)));
 
   return (
     <div className="page wide budget">
       <div className="topbar">
-        {view === 'home' && last ? periodSelect : <button className="iconbtn" onClick={() => setView('home')} aria-label="Retour"><ArrowLeft size={18} strokeWidth={1.6} /></button>}
+        {view === 'home' && last ? <span /> : <button className="iconbtn" onClick={() => setView('home')} aria-label="Retour"><ArrowLeft size={18} strokeWidth={1.6} /></button>}
         {view === 'home' && last ? <button className="iconbtn" onClick={() => setView('todo')} aria-label="Documents et points à traiter" title="Documents et points à traiter"><FolderOpen size={18} strokeWidth={1.6} />{todo > 0 ? <i className="badge">{todo}</i> : null}</button> : <span className="muted small">{view === 'all' ? '' : 'Documents'}</span>}
       </div>
 
       {view === 'home' && last ? (
         <>
+          {timeline}
           <section className="hero">
             <p className={'big xl' + (resteM < 0 ? ' neg' : '')}>{money(resteM)}</p>
             <p className="unit">reste par mois · entrées {money(rec.income / monthsN)} · sorties {money(spendYear / monthsN)}</p>
@@ -357,31 +443,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             ))}
           </div>
 
-          {tab === 'revient' ? (
-            <ul className="rows">
-              {rec.recurring.slice(0, cut(rec.recurring.length)).map((x) => (
-                <Row key={x.key} id={x.key} name={x.label} amount={money(x.perYear)} chip={<Trend t={x.trend} d={x.delta} />} facts={[LABEL[x.category] ?? x.category, x.cadence, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')]} lines={x.lines} />
-              ))}
-            </ul>
-          ) : null}
-          {tab === 'quotidien' ? (
-            <ul className="rows">
-              {rec.merchants.slice(0, cut(rec.merchants.length)).map((x) => (
-                <Row key={x.key} id={x.key} name={x.label} amount={money(x.total)} chip={<Trend t={x.trend} d={x.delta} />} facts={[LABEL[x.category] ?? x.category, plural(x.count, 'paiement')]} lines={x.lines} />
-              ))}
-            </ul>
-          ) : null}
-          {tab === 'exceptionnel' ? (
-            <ul className="rows">
-              {rec.oneOffs.slice(0, cut(rec.oneOffs.length)).map((x, i) => (
-                <Row key={i} id={`o${i}`} name={/^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label} amount={money(x.amount)} facts={[dateFr(x.date), LABEL[x.category] ?? x.category, x.bien ?? '']} lines={[{ date: x.date, amount: x.amount, account: '', text: x.text }]} />
-              ))}
-            </ul>
-          ) : null}
-          {tab === 'revient' || tab === 'quotidien' || tab === 'exceptionnel' ? (() => {
-            const n = tab === 'revient' ? rec.recurring.length : tab === 'quotidien' ? rec.merchants.length : rec.oneOffs.length;
-            return n > 8 ? <button className="morelink" onClick={() => setMore(!more)}>{more ? 'Réduire' : `Voir les ${n - 8} autres`}</button> : null;
-          })() : null}
+          {tab === 'revient' ? <ListView tabKey="revient" items={rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))} /> : null}
+          {tab === 'quotidien' ? <ListView tabKey="quotidien" items={rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, plural(x.count, 'paiement')], lines: x.lines }))} /> : null}
+          {tab === 'exceptionnel' ? <ListView tabKey="exceptionnel" items={rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))} /> : null}
 
           {tab === 'evolution' ? (
             <section>
@@ -390,9 +454,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                 <ul className="rows">
                   {rec.categories.slice(0, 6).map((c) => (
                     <li key={c.category} className="plain">
-                      <span className="n">{LABEL[c.category] ?? c.category}</span>
-                      <span className={'chip ' + (c.trend > 0 ? 'up' : 'down')}>{pct(c.trend)}</span>
-                      <span className="v">{c.delta > 0 ? '+' : ''}{money(c.delta)}</span>
+                      <span className="n">{LABEL[c.category] ?? c.category}<small>{money(c.prior)} → {money(c.perYear)}</small></span>
+                      <span className={'delta ' + (c.delta > 0 ? 'up' : 'down')}>{c.delta > 0 ? '+' : ''}{money(c.delta)}</span>
                     </li>
                   ))}
                 </ul>
@@ -403,9 +466,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   <ul className="rows">
                     {moving.map((x) => (
                       <li key={x.key} className="plain">
-                        <span className="n">{x.label}</span>
-                        <span className={'chip ' + ((x.trend ?? 0) > 0 ? 'up' : 'down')}>{pct(x.trend)}</span>
-                        <span className="v">{(x.delta ?? 0) > 0 ? '+' : ''}{money(x.delta ?? 0)}</span>
+                        <span className="n">{x.label}<small>{x.prior !== null && x.prior !== undefined ? `${money(x.prior)} → ${money(x.perYear)}` : ''}</small></span>
+                        <span className={'delta ' + ((x.delta ?? 0) > 0 ? 'up' : 'down')}>{(x.delta ?? 0) > 0 ? '+' : ''}{money(x.delta ?? 0)}</span>
                       </li>
                     ))}
                   </ul>
@@ -431,7 +493,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
                   const home = (b.homes ?? []).includes(bien);
                   const dec = state.decomptes.find((d) => d.bien === bien);
-                  const items = [...rec.recurring.filter((x) => x.bien === bien).map((x) => ({ n: x.label, v: x.perYear })), ...rec.oneOffs.filter((x) => x.bien === bien && x.category === 'travaux').map((x) => ({ n: `Travaux, ${dateFr(x.date)}`, v: x.amount }))];
+                  const items = [...rec.recurring.filter((x) => x.bien === bien).map((x) => ({ n: x.label, v: x.perYear })), ...rec.works.filter((x) => (x.bien ?? 'À rattacher') === bien).map((x) => ({ n: `${x.label}, ${dateFr(x.date)}`, v: x.amount }))];
                   return (
                     <div className="bien" key={bien}>
                       <div className="bn">{bien}</div>
