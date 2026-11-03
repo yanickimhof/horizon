@@ -1,0 +1,20 @@
+.about { max-width: 860px; }
+.about-score { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 4px 12px; margin: 26px 0 28px; }
+.about-score strong { font-size: 34px; font-weight: 300; letter-spacing: -0.03em; }
+.about-score span { color: var(--ink-2); }
+.about-score i { grid-column: 1 / -1; display: block; height: 6px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.about-score i b { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.about-opt { margin-left: 8px; font-size: 11px; color: var(--ink-2); background: var(--track); border-radius: 99px; padding: 1px 8px; vertical-align: 1px; }
+.about-where { margin-top: 2px; }
+.about-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 28px; align-items: start; }
+.about-text { padding: 6px 18px 14px; }
+.about-text p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin-top: 10px; }
+.about-text p b { color: var(--ink); font-weight: 500; }
+.about-text pre { margin: 12px 0 2px; background: var(--track); border-radius: 12px; padding: 12px 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; }
+.about-text pre code { background: none; padding: 0; }
+.about-share { margin-top: 28px; }
+.about-foot { color: var(--ink-2); font-size: 12.5px; text-align: center; margin-top: 36px; }
+.tag:not(.ok):not(.assumed) { background: color-mix(in srgb, var(--neg) 12%, transparent); color: var(--neg); }
+@media (max-width: 880px) { .about-cols { grid-template-columns: 1fr; } }
+.about-actions { display: flex; gap: 10px; align-items: center; margin: 0 0 22px; }
+.about-actions .btn { margin: 0; }

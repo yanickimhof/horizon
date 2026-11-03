@@ -1,0 +1,11 @@
+.stmts { margin-top: 26px; }
+.stmts-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.stmts-pick input[type='file'] { max-width: 230px; font-size: 13px; background: none; padding: 0; }
+.stmts-out { display: grid; gap: 22px; margin-top: 16px; }
+.stmts .line-end b { font-weight: 500; }
+.usage-bar { height: 6px; border-radius: 99px; background: var(--track); overflow: hidden; margin: 10px 0 6px; }
+.usage-bar b { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.usage-bar.hot b { background: var(--neg); }
+.usage-cap { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; }
+.usage-cap input { width: 84px; text-align: right; }
+.auto { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; margin-left: 16px; }

@@ -1,0 +1,16 @@
+.solidity { display: grid; gap: 24px; margin-top: 28px; }
+.solidity .line-end { flex-direction: column; align-items: flex-end; gap: 0; }
+.solidity .line-end b { font-weight: 500; font-size: 17px; }
+.factors { padding: 4px 0; }
+.factor { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.factor:last-of-type { border-bottom: 0; }
+.factor-label { font-size: 14px; margin-bottom: 6px; }
+.factor-bars { display: grid; grid-template-columns: 1fr 1fr; height: 10px; background: var(--track); border-radius: 99px; overflow: hidden; position: relative; }
+.factor-bars::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.fb { display: flex; }
+.fb.left { justify-content: flex-end; }
+.fb i { display: block; height: 100%; }
+.fb i.neg { background: var(--neg); }
+.fb i.pos { background: var(--c-cash); }
+.factor-vals { display: flex; justify-content: space-between; gap: 12px; color: var(--ink-2); font-size: 12.5px; margin-top: 6px; }
+.factor-vals b { color: var(--ink); font-weight: 500; }

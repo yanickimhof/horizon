@@ -1,0 +1,14 @@
+node_modules
+dist
+.env
+.env.*
+
+# Données personnelles : ne jamais versionner
+data/
+inbox/
+*.local.*
+*.db
+*.db-journal
+
+# Garder le modèle de configuration
+!.env.example
