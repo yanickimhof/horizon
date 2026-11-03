@@ -201,7 +201,7 @@ Outil d'aide à la réflexion et à l'organisation. Il ne constitue pas un conse
 
 ## Budget: de documents à chiffres
 
-Le budget vit dans trois tables de la base (`budget_accounts`, `budget_txs`, `budget_estimates`) et quelques réglages (`budget.biens`, `budget.uniques`, `budget.imputation`, mémoire de classement). Aucune ligne n'est saisie à la main.
+Le budget vit dans trois tables de la base (`budget_accounts`, `budget_txs`, `budget_estimates`) et quelques réglages (`budget.biens`, `budget.fournisseurs`, `budget.repartitions`, `budget.eclats`, `budget.uniques`, mémoire de classement). Aucune ligne n'est saisie à la main.
 
 Chaîne de lecture (`server/watch.ts`):
 
@@ -210,6 +210,7 @@ Chaîne de lecture (`server/watch.ts`):
 3. **Factures de carte Viseca** (`server/viseca.ts`): lecture déterministe, catégorie de la banque conservée (source `banque`), contrôle sur le total imprimé; un montant manquant se déduit du total si une seule ligne est en cause.
 4. **Autres PDF qui ressemblent à un relevé**: un petit modèle renvoie les lignes (`server/tx-extract.ts`); un solde d'ouverture et de clôture réconcilie la somme, sinon rien n'est enregistré.
 5. **Classement** (`reclassify` dans `server/budget.ts`): règles locales, virements entre comptes du foyer, appariement des virements internes, doublons entre comptes (la ligne gardée prend le libellé le plus complet), revenus exceptionnels (mois contre habitude de l'émetteur), mémoire de l'utilisateur; puis, pour ce qui reste inconnu, un petit modèle sur des libellés réduits (`server/budget-ai.ts`).
-6. **Vue** (`budgetView`): mois par mois, revenus, dépenses, mis de côté, versements uniques, catégories, travaux et immobilier par bien, imputation d'un montant à une autre année.
+6. **Analyse** (`recurringView` dans `server/recurring.ts`, noms de fournisseurs dans `server/supplier.ts`, décomptes de copropriété dans `server/decompte.ts`): sépare ce qui revient, le quotidien, l'exceptionnel et les travaux d'un bien sur une période (12 mois, une année, un mois ou une plage). Les comparaisons se font sur les mêmes mois un an plus tôt, sans extrapolation. Une correction de fournisseur est une règle (`key` du fournisseur, ou `re` sur le libellé); la plus récente l'emporte.
+7. **Vue** (`budgetView`): mois par mois, revenus, dépenses, mis de côté, versements uniques, catégories, travaux et immobilier par bien, imputation d'un montant à une autre année.
 
 Priorité des sources de classement: mémoire de l'utilisateur, puis catégorie de la banque, puis modèle, puis règles. Une ligne classée par la mémoire, le modèle ou la banque n'est jamais recalculée.

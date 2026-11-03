@@ -56,19 +56,23 @@ Elles ne figurent pas dans les relevés, mais changent tout.
 
 ## 5. Lire le résultat
 
-L'écran **Budget** répond à quatre questions:
+L'écran **Budget** répond à une question: où vont les gains et les dépenses, et où peut-on optimiser. Une frise en haut montre les gains et les dépenses mois par mois; on clique un mois, une année, ou on glisse sur une plage (« 12 mois » revient à la vue par défaut). Cinq onglets en dessous:
 
-| Question | Où |
+| Onglet | Ce qu'on y lit |
 |---|---|
-| Combien rentre, combien sort, combien reste-t-il ? | les trois tuiles du haut (moyenne mensuelle) |
-| Quel est mon rythme habituel ? | « Habituelles, sans travaux ni montants uniques » |
-| Où va l'argent ? | « Où part l'argent », avec la tendance (3 derniers mois, ou année contre année) |
-| Qu'est-ce qui rapporte, qu'est-ce qui coûte ? | « Immobilier: ménage et locatif », « Travaux par bien » |
+| Synthèse | gains et dépenses de la période, comparés aux mêmes mois un an plus tôt (les deux montants et les mois sont écrits), d'où viennent les gains, comment se répartissent les dépenses, ce qu'on peut comparer ou renégocier |
+| Revient | les charges fixes (hypothèque, assurances, abonnements, impôts réguliers) avec leur montant par an et par mois |
+| Quotidien | les dépenses courantes régulières (courses, essence, restaurants) |
+| Exceptionnel | impôts, voyages et grosses dépenses uniques, groupés par catégorie |
+| Immobilier | résidence principale, puis investissements: rendement net, cash-flow, dette sur valeur; travaux par bien |
 
-- **Sélecteur de période:** 12 derniers mois, ou une année (la comparaison avec l'année précédente s'affiche pour chaque catégorie).
-- **Versements uniques:** ils sont comptés dans les totaux, mais pas dans la moyenne mensuelle.
+- **Détail d'une ligne:** un clic ouvre les paiements. « Corriger le nom ou la catégorie » s'applique à toutes les variantes du même fournisseur; la correction la plus récente l'emporte sur une ancienne règle.
+- **Tri et regroupement:** par montant ou par nom, avec ou sans regroupement par catégorie.
+- **Valeur des biens:** la valeur estimée, sa fourchette et sa source s'affichent dans la fiche du bien. Sans expertise, le rendement et la dette sur valeur restent indicatifs.
+- **Répartition d'un solde de loyers:** un versement de gérance qui ne vaut pas des mois complets reste « Non réparti » tant que tu ne l'as pas réparti (réglage `budget.repartitions`: libellé, date, biens concernés, au prorata de leurs loyers habituels).
+- **Versements uniques:** ils sont comptés à part, pas dans les gains habituels.
 - **Mis de côté:** épargne, 3e pilier, rachats de caisse de pension, amortissements: ce n'est pas une dépense.
-- **À identifier:** il ne reste là que ce qu'Horizon ne sait pas classer. Chaque ligne indique la date, le compte et l'occurrence. « Je ne sais pas » est une réponse acceptée.
+- **À identifier:** il ne reste là que ce qu'Horizon ne sait pas classer. « Je ne sais pas » est une réponse acceptée.
 
 ## 6. Contrôler les chiffres
 
