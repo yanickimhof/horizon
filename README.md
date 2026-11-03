@@ -50,13 +50,13 @@ Le guide complet, pour quelqu'un qui découvre l'outil, est dans **[docs/GUIDE.m
 
 Captures prises sur des données de démonstration inventées (famille fictive chargée par `npm run dev`).
 
-![Ce qui revient](docs/screenshots/revient.jpg)
+![Synthèse](docs/screenshots/synthese.jpg)
 
-![Évolution](docs/screenshots/evolution.jpg)
+![Ce qui revient](docs/screenshots/revient.jpg)
 
 ![Immobilier par bien](docs/screenshots/immobilier.jpg)
 
-- **Budget** (accueil): ce qui reste par mois, la répartition des sorties en trois (ce qui revient, le quotidien, l'exceptionnel) et cinq onglets. Chaque ligne s'ouvre sur ses paiements et peut être renommée ou reclassée. Un menu choisit la période (12 mois, une année à ce jour, un mois); les variations comparent les mêmes mois d'une année à l'autre. L'onglet Immobilier détaille loyers, charges et net par bien, avec le décompte annuel de copropriété quand il est dans le dossier. L'icône dossier ouvre les documents, les lignes à identifier, les noms choisis et tes biens.
+- **Budget** (accueil): une frise des gains et des dépenses mois par mois (clic sur un mois, une année ou une plage), puis cinq onglets: Synthèse (gains, dépenses, comparaison aux mêmes mois un an plus tôt avec les deux montants écrits), Revient (charges fixes), Quotidien (dépenses courantes), Exceptionnel (impôts, voyages, grosses dépenses) et Immobilier (résidence principale, puis investissements avec rendement net, cash-flow et dette sur valeur). Chaque ligne s'ouvre sur ses paiements et peut être renommée ou reclassée; la correction vaut pour toutes les variantes du fournisseur. L'icône dossier ouvre les documents, les lignes à identifier, les noms choisis et tes biens.
 - **Importer**: lit un dossier ou des fichiers, masque les identifiants.
 - **À valider**: faits proposés par la lecture des documents, en attente de ton accord.
 - **Données**: tout ce qui est connu, modifiable, avec historique.
