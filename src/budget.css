@@ -170,3 +170,7 @@
 .decompte { margin-top: 10px; border-top: 1px solid var(--line, rgba(0,0,0,.08)); padding-top: 8px; }
 .decompte summary { cursor: pointer; font-size: 13px; color: var(--ink-2); }
 .mini.sm li { font-size: 12px; padding: 2px 0; }
+
+.fixform { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.fixform input { flex: 1 1 180px; }
+.welcome ol { padding-left: 20px; line-height: 1.6; margin: 8px 0; }

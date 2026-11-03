@@ -269,3 +269,34 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   oneOffs.sort((a, b) => b.amount - a.amount);
   return { categories: categories.slice(0, 8), months, comparedMonths: priorCovered ? pairMonths.length : 0, income, recurring, merchants, oneOffs, totals };
 }
+
+export interface Fournisseur {
+  re: string;
+  name: string;
+  category?: string;
+}
+
+export function getFournisseurs(l: Ledger): Fournisseur[] {
+  try {
+    return JSON.parse(l.getSetting('budget.fournisseurs') || '[]');
+  } catch {
+    return [];
+  }
+}
+
+/** Enregistre les noms (et catégories) choisis par l'utilisateur pour des fournisseurs. */
+export function setFournisseurs(l: Ledger, rules: Fournisseur[]): void {
+  const clean: Fournisseur[] = [];
+  for (const r of rules) {
+    const re = String(r.re ?? '').trim();
+    const name = String(r.name ?? '').trim();
+    if (!re || !name) continue;
+    try {
+      new RegExp(re, 'i');
+    } catch {
+      throw new Error(`Motif invalide: ${re}`);
+    }
+    clean.push({ re, name, ...(r.category ? { category: String(r.category) } : {}) });
+  }
+  l.setSetting('budget.fournisseurs', JSON.stringify(clean));
+}

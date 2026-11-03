@@ -7,7 +7,7 @@ import { classifyUnknown } from './statements-ai';
 import { proposeGap } from './statements-propose';
 import { addEstimate, setBiens, budgetView, labelTransactions, removeEstimate, setMinorUnknownToOther, storeStatements } from './budget';
 import { classifyStored } from './budget-ai';
-import { recurringView } from './recurring';
+import { getFournisseurs, recurringView, setFournisseurs } from './recurring';
 import { decomptesView } from './decompte';
 import { mkdirSync } from 'node:fs';
 import { Ledger } from './ledger';
@@ -117,6 +117,7 @@ function buildState(name: DbName, caseId: CaseId = 'base', access: { remote: boo
     budget: budgetView(l, new Date(), 80),
     recurring: recurringView(l),
     decomptes: decomptesView(l),
+    fournisseurs: getFournisseurs(l),
     llm: { provider: provider(l), localOnly: privacyMode(l) === 'local' },
     privacy: {
       mode: privacyMode(l),
@@ -419,6 +420,12 @@ export async function apiMiddleware(req: IncomingMessage, res: ServerResponse, n
       }
       case 'POST /api/budget/biens': {
         setBiens(l, Array.isArray(body.rules) ? body.rules : []);
+        break;
+      }
+      case 'POST /api/budget/fournisseurs': {
+        const rules = (Array.isArray(body.rules) ? body.rules : []) as { re: string; name: string; category?: string }[];
+        for (const r of rules) if (r.category && !(r.category in CATEGORIES)) throw new Error('Catégorie invalide.');
+        setFournisseurs(l, rules);
         break;
       }
       case 'POST /api/budget/estimate/remove': {

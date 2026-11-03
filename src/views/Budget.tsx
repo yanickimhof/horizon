@@ -278,6 +278,25 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     .slice(0, 10);
   const levers = rec.recurring.filter((x) => x.lever).slice(0, 6);
   const dateFr = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('fr-CH', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  const [fix, setFix] = useState<{ id: string; name: string; category: string } | null>(null);
+  const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tooGeneral = (t: string) => t.length < 4 || /^(paiement|d[ée]bit|cr[ée]dit|transfert|virement|ordre|retrait|achat|e-banking)\b/i.test(t);
+  const saveFix = async (seed: string) => {
+    if (!fix || !fix.name.trim()) return;
+    try {
+      setState(await api.post(db, 'budget/fournisseurs', { rules: [...state.fournisseurs.filter((r) => r.re !== escapeRe(seed)), { re: escapeRe(seed), name: fix.name.trim(), ...(fix.category ? { category: fix.category } : {}) }] }));
+      setFix(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const removeFournisseur = async (re: string) => {
+    try {
+      setState(await api.post(db, 'budget/fournisseurs', { rules: state.fournisseurs.filter((r) => r.re !== re) }));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
   const Row = ({ id, name, amount, chip, facts, lines }: { id: string; name: string; amount: string; chip?: ReactElement | null; facts: string[]; lines: { date: string; amount: number; account: string; text: string }[] }) => (
     <li className={open === id ? 'open' : ''}>
       <button className="rowbtn" onClick={() => setOpen(open === id ? '' : id)} aria-expanded={open === id}>
@@ -288,6 +307,23 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       {open === id ? (
         <div className="detail">
           <p className="facts">{facts.filter(Boolean).join(' · ')}</p>
+          {(() => {
+            const seed = (lines[0]?.text ?? '').split(',')[0].trim();
+            if (!seed || tooGeneral(seed)) return null;
+            return fix?.id === id ? (
+              <div className="fixform">
+                <input value={fix.name} onChange={(e) => setFix({ ...fix, name: e.target.value })} aria-label="Nom" placeholder="Nom du fournisseur" />
+                <select value={fix.category} onChange={(e) => setFix({ ...fix, category: e.target.value })} aria-label="Catégorie">
+                  <option value="">Garder la catégorie</option>
+                  {CATS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <button className="btn" onClick={() => saveFix(seed)}>Enregistrer</button>
+                <button className="btn small" onClick={() => setFix(null)}>Annuler</button>
+              </div>
+            ) : (
+              <button className="link" onClick={() => setFix({ id, name, category: '' })}>Corriger le nom ou la catégorie</button>
+            );
+          })()}
           <ul>
             {lines.map((ln, i) => <li key={i}><span>{dateFr(ln.date)}</span><span className="t">{ln.text}</span><b>{money(ln.amount)}</b></li>)}
           </ul>
@@ -430,6 +466,17 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
 
       {view === 'todo' || !last ? (
         <>
+      {!last ? (
+        <section className="tile welcome">
+          <h2>Bienvenue</h2>
+          <ol>
+            <li>Mets tes documents dans un dossier: relevés de comptes et de cartes, décomptes, impôts, contrats. Plus tu remontes loin, mieux Horizon compare.</li>
+            <li>Indique ce dossier ci-dessous et lance la lecture. Les noms et numéros sont masqués, tout reste sur ton ordinateur.</li>
+            <li>Horizon classe, écarte les doublons et les virements entre tes comptes, puis te montre ce qui reste, ce qui revient, ce qui change.</li>
+          </ol>
+          <p className="muted small">Un compte à l’étranger ou un bien immobilier? Ils apparaissent seulement si tes documents en contiennent.</p>
+        </section>
+      ) : null}
       <section className="tile import">
         <h2>Dossier de documents</h2>
         <div className="imp-row">
@@ -516,6 +563,21 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           ) : null}
         </section>
       ) : null}
+      <section className="tile">
+        <h2>Noms et catégories</h2>
+        <p className="muted small">Un nom ou une catégorie corrigés sur une ligne s’appliquent à tous les paiements du même fournisseur. Pour corriger, ouvre une ligne dans Revient, Quotidien ou Exceptionnel.</p>
+        {state.fournisseurs.length > 0 ? (
+          <ul className="changes">
+            {state.fournisseurs.map((r) => (
+              <li key={r.re}>
+                <span className="name">{r.name}<span className="muted small"> · {r.re.replace(/\\(.)/g, '$1')}{r.category ? ` · ${LABEL[r.category] ?? r.category}` : ''}</span></span>
+                <button className="btn small" onClick={() => removeFournisseur(r.re)} aria-label={`Retirer ${r.name}`}>Retirer</button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="muted small">Aucun nom choisi pour l’instant.</p>}
+      </section>
+
       <section className="tile">
         <h2>Mes biens</h2>
         <p className="muted small">Dis à quel bien appartient un fournisseur (régie, copropriété, artisan, banque du prêt): ses loyers, charges et travaux sont alors regroupés par bien. Si un même fournisseur change de bien, ajoute une période.</p>

@@ -32,6 +32,7 @@ export interface State {
   budget: BudgetView;
   recurring: RecurringView;
   decomptes: Decompte[];
+  fournisseurs: { re: string; name: string; category?: string }[];
   docs: { chunks: number; sources: number };
   empty: boolean;
   snapshot: Snapshot;
