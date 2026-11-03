@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type MouseEvent, type ReactElement } from 'react';
-import { ArrowDownRight, ArrowLeft, ArrowUpRight, Building2, FolderOpen, Repeat, ShoppingBasket, TrendingUp, Zap } from 'lucide-react';
+import { ArrowDownRight, ArrowLeft, ArrowUpRight, Building2, FolderOpen, Home, Landmark, LayoutGrid, Repeat, ShoppingBasket, TrendingUp, Wallet, Zap } from 'lucide-react';
 import { api, fmt, type Db, type RecurringView, type State, type WatchStatus } from '../api';
 import '../budget.css';
 
@@ -259,9 +259,19 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   }, [period, db, state.budget.count]);
   const rec = period === '12' || !recAlt ? state.recurring : recAlt;
   const [open, setOpen] = useState('');
-  const [tab, setTab] = useState<'revient' | 'quotidien' | 'exceptionnel' | 'evolution' | 'immo'>('revient');
+  const [tab, setTab] = useState<'synthese' | 'revient' | 'quotidien' | 'exceptionnel' | 'immo'>('synthese');
   const [more, setMore] = useState(false);
   const monthsN = Math.max(rec.months.length, 1);
+  const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k), ...rec.works.map((w) => w.bien ?? 'À rattacher')])];
+  const monthShort = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('fr-CH', { month: 'short' }).replace('.', '');
+  const priorLabel = (() => {
+    const pm = rec.priorMonths;
+    if (pm.length === 0) return '';
+    const a = pm[0];
+    const z = pm[pm.length - 1];
+    if (a === z) return `${monthShort(a)} ${a.slice(0, 4)}`;
+    return a.slice(0, 4) === z.slice(0, 4) ? `${monthShort(a)} à ${monthShort(z)} ${z.slice(0, 4)}` : `${monthShort(a)} ${a.slice(0, 4)} à ${monthShort(z)} ${z.slice(0, 4)}`;
+  })();
   const spendYear = rec.totals.recurring + rec.totals.daily + rec.totals.exceptional + rec.totals.works;
   const resteM = (rec.income - spendYear) / monthsN;
   const barMax = Math.max(rec.income, spendYear, 1);
@@ -299,8 +309,89 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       setErr(e instanceof Error ? e.message : String(e));
     }
   };
+  const pctPlain = (x: number) => `${(Math.round(x * 1000) / 10).toString().replace('.', ',')} %`;
+  const nrm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const factsAssets = state.facts.filter((f) => f.key.startsWith('asset:') && f.data.class === 'real_estate');
+  const factsDebts = state.facts.filter((f) => f.key.startsWith('liability:') && typeof f.data.balance === 'number');
+  const factor = 12 / Math.max(used.length, 1);
+  type Prop = { bien: string; home: boolean; commune: string; valeur: number | null; dette: number; taux: number | null; loyers: number; charges: number; interets: number; travaux: number; autres: number; rend: number | null; cash: number; ltv: number | null; items: { n: string; v: number }[] };
+  const props: Prop[] = bienNames.map((bien) => {
+    const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
+    const asset = factsAssets.find((f) => nrm(String(f.data.label ?? '')).includes(nrm(bien)));
+    const debts = asset ? factsDebts.filter((d) => d.data.securedBy === asset.key) : [];
+    const dette = debts.reduce((t, d) => t + Number(d.data.balance), 0);
+    const taux = dette > 0 ? debts.reduce((t, d) => t + Number(d.data.balance) * Number(d.data.rate ?? 0), 0) / dette : null;
+    const valeur = asset && typeof asset.data.value === 'number' ? Number(asset.data.value) : null;
+    const home = (b.homes ?? []).includes(bien) || asset?.data.subtype === 'home';
+    const items = rec.recurring.filter((x) => x.bien === bien);
+    const interets = items.filter((x) => /^int[ée]r[êe]ts/i.test(x.label)).reduce((t, x) => t + x.perYear, 0);
+    const travaux = rec.works.filter((w) => (w.bien ?? 'À rattacher') === bien).reduce((t, w) => t + w.amount, 0);
+    const autres = Math.max(0, v.charges - interets - travaux);
+    const noi = (v.loyers - autres) * factor;
+    return {
+      bien, home, commune: String(asset?.data.commune ?? ''), valeur, dette, taux, loyers: v.loyers, charges: v.charges, interets, travaux, autres,
+      rend: valeur && !home ? noi / valeur : null,
+      cash: (v.loyers - v.charges) / Math.max(used.length, 1),
+      ltv: valeur && dette > 0 ? dette / valeur : null,
+      items: [...items.map((x) => ({ n: x.label, v: x.perYear })), ...rec.works.filter((w) => (w.bien ?? 'À rattacher') === bien).map((w) => ({ n: `${w.label}, ${dateFr(w.date)}`, v: w.amount }))],
+    };
+  });
+  const homeProps = props.filter((p) => p.home);
+  const invProps = props.filter((p) => !p.home);
+  const invSummary = (() => {
+    const withVal = invProps.filter((p) => p.valeur);
+    if (invProps.length === 0) return null;
+    const val = withVal.reduce((t, p) => t + (p.valeur ?? 0), 0);
+    const noi = withVal.reduce((t, p) => t + (p.rend ?? 0) * (p.valeur ?? 0), 0);
+    const debt = withVal.reduce((t, p) => t + p.dette, 0);
+    const rend = val > 0 ? noi / val : null;
+    const cash = invProps.reduce((t, p) => t + p.cash, 0);
+    const ltv = val > 0 && debt > 0 ? debt / val : null;
+    const tone = { r: rend === null ? '' : rend >= 0.03 ? 'ok' : rend >= 0.02 ? 'mid' : 'bad', c: cash >= 0 ? 'ok' : 'bad', l: ltv === null ? '' : ltv <= 0.6 ? 'ok' : ltv <= 0.75 ? 'mid' : 'bad' };
+    return { rend, cash, ltv, tone };
+  })();
+  const PropCard = ({ p }: { p: Prop }) => {
+    const tr = p.rend === null ? '' : p.rend >= 0.03 ? 'ok' : p.rend >= 0.02 ? 'mid' : 'bad';
+    const tl2 = p.ltv === null ? '' : p.ltv <= 0.6 ? 'ok' : p.ltv <= 0.75 ? 'mid' : 'bad';
+    const monthlyCost = (p.charges) / Math.max(used.length, 1);
+    return (
+      <details className="prop">
+        <summary>
+          <span className="pn">{p.bien}{p.commune ? <small>{p.commune}</small> : null}</span>
+          {p.home ? (
+            <span className="inds">
+              <span className="ind"><Home size={16} strokeWidth={1.6} /><b>{money(monthlyCost)}</b><small>par mois</small></span>
+              <span className={'ind ' + tl2}><Landmark size={16} strokeWidth={1.6} /><b>{p.ltv !== null ? pctPlain(p.ltv) : '—'}</b><small>de dette</small></span>
+            </span>
+          ) : (
+            <span className="inds">
+              <span className={'ind ' + tr}><TrendingUp size={16} strokeWidth={1.6} /><b>{p.rend !== null ? pctPlain(p.rend) : '—'}</b><small>rendement</small></span>
+              <span className={'ind ' + (p.cash >= 0 ? 'ok' : 'bad')}><Wallet size={16} strokeWidth={1.6} /><b>{money(p.cash)}</b><small>par mois</small></span>
+              <span className={'ind ' + tl2}><Landmark size={16} strokeWidth={1.6} /><b>{p.ltv !== null ? pctPlain(p.ltv) : '—'}</b><small>de dette</small></span>
+            </span>
+          )}
+        </summary>
+        <ul className="mini">
+          {!p.home ? <li><span>Loyers reçus</span><b>{money(p.loyers)}</b></li> : null}
+          {p.items.map((it, i) => <li key={i}><span>{it.n}</span><b>{money(it.v)}</b></li>)}
+          {!p.home ? <li className="net"><span>Net</span><b>{money(p.loyers - p.charges)}</b></li> : null}
+          {p.valeur ? <li className="sep"><span>Valeur estimée</span><b>{money(p.valeur)}</b></li> : null}
+          {p.dette > 0 ? <li><span>Hypothèque{p.taux !== null ? `, taux moyen ${pctPlain(p.taux)}` : ''}</span><b>{money(p.dette)}</b></li> : null}
+        </ul>
+        {(() => {
+          const dec = state.decomptes.find((d) => d.bien === p.bien);
+          return dec ? (
+            <div className="decompte">
+              <p className="muted small">Décompte de copropriété {dateFr(dec.from)} au {dateFr(dec.to)}: charges {money(dec.total)}{dec.paid > dec.total ? `, versé ${money(dec.paid)}` : ''}{dec.solde !== null ? (dec.solde < 0 ? `, à payer ${money(Math.abs(dec.solde))}` : dec.settled ? `, solde de ${money(dec.solde)} déduit le ${dateFr(dec.settled)}` : `, à recevoir ${money(dec.solde)}`) : ''}.</p>
+              <ul className="mini sm">{dec.lines.map((ln, i) => <li key={i}><span>{ln.label}</span><b>{money(ln.amount)}</b></li>)}</ul>
+            </div>
+          ) : null;
+        })()}
+      </details>
+    );
+  };
   const tl = full.slice(-24);
-  const tlMax = Math.max(1, ...tl.map((m) => m.spend));
+  const tlMax = Math.max(1, ...tl.flatMap((m) => [m.spend, m.income]));
   const selMonths = new Set(rec.months);
   const [anchor, setAnchor] = useState('');
   const pickMonth = (e: MouseEvent, m: string) => {
@@ -320,8 +411,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     <div className="timeline">
       <div className="tlbars" role="group" aria-label="Choisir une période">
         {tl.map((m) => (
-          <button key={m.month} className={selMonths.has(m.month) ? 'on' : ''} onClick={(e) => pickMonth(e, m.month)} title={`${monthName(m.month)}, sorties ${money(m.spend)}`} aria-label={monthName(m.month)} aria-pressed={selMonths.has(m.month)}>
-            <i style={{ height: `${Math.max(6, (m.spend / tlMax) * 100)}%` }} />
+          <button key={m.month} className={selMonths.has(m.month) ? 'on' : ''} onClick={(e) => pickMonth(e, m.month)} title={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-label={monthName(m.month)} aria-pressed={selMonths.has(m.month)}>
+            <i className="gain" style={{ height: `${Math.max(4, (m.income / tlMax) * 100)}%` }} /><i className="dep" style={{ height: `${Math.max(4, (m.spend / tlMax) * 100)}%` }} />
           </button>
         ))}
       </div>
@@ -334,13 +425,22 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         <button className={period === '12' ? 'on' : ''} onClick={() => { setPeriod('12'); setOpen(''); setMore(false); }}>12 mois</button>
         <span>{periodLabel}</span>
       </div>
+      <p className="tlcap"><span><b style={{ background: '#5aa877' }} />Gains</span><span><b style={{ background: '#534AB7' }} />Dépenses</span></p>
+      <p className="tlcmp">{rec.comparedMonths > 0 ? `Les ↑ ↓ comparent à la même période: ${priorLabel}.` : 'Pas de comparaison: les relevés ne remontent pas assez loin.'}</p>
     </div>
   );
+  const Cmp = ({ now, before, goodUp = false }: { now: number; before: number | null; goodUp?: boolean }) => {
+    if (before === null || before <= 0) return <p className="cmpline">Pas de comparaison possible</p>;
+    const t = now / before - 1;
+    if (Math.abs(t) < 0.02) return <p className="cmpline">Stable · {money(before)} en {priorLabel}</p>;
+    const good = goodUp ? t > 0 : t < 0;
+    return <p className={'cmpline ' + (good ? 'down' : 'up')}>{t > 0 ? '↑' : '↓'} {pct(t)} · {money(before)} en {priorLabel}</p>;
+  };
   type Item = { id: string; name: string; amount: number; cat: string; prior?: number | null; trend?: number | null; delta?: number | null; facts: string[]; lines: { date: string; amount: number; account: string; text: string }[] };
   const [sortBy, setSortBy] = useState<'montant' | 'nom'>('montant');
   const [groupBy, setGroupBy] = useState<Record<string, boolean>>({ exceptionnel: true });
   const [openGroup, setOpenGroup] = useState('');
-  const note = (it: Item) => (it.trend !== null && it.trend !== undefined && it.delta !== null && it.delta !== undefined && it.prior !== null && it.prior !== undefined && Math.abs(it.trend) >= 0.1 && Math.abs(it.delta) >= 100 ? { text: `${it.trend > 0 ? '↑' : '↓'} ${pct(it.trend)} · avant ${money(it.prior)}`, tone: it.trend > 0 ? 'up' : 'down' } : null);
+  const note = (it: Item) => (it.trend !== null && it.trend !== undefined && it.delta !== null && it.delta !== undefined && it.prior !== null && it.prior !== undefined && Math.abs(it.trend) >= 0.1 && Math.abs(it.delta) >= 100 ? { text: `${it.trend > 0 ? '↑' : '↓'} ${pct(it.trend)} · ${money(it.prior)} en ${priorLabel}`, tone: it.trend > 0 ? 'up' : 'down' } : null);
   const Row = ({ it }: { it: Item }) => {
     const n = note(it);
     return (
@@ -416,7 +516,6 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       </>
     );
   };
-  const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k), ...rec.works.map((w) => w.bien ?? 'À rattacher')])];
   const maxCat = Math.max(1, ...cats.map((c) => (catView === 'total' ? c.total : c.avg)));
 
   return (
@@ -429,16 +528,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       {view === 'home' && last ? (
         <>
           {timeline}
-          <section className="hero">
-            <p className={'big xl' + (resteM < 0 ? ' neg' : '')}>{money(resteM)}</p>
-            <p className="unit">reste par mois · entrées {money(rec.income / monthsN)} · sorties {money(spendYear / monthsN)}</p>
-          </section>
-          <div className="stackbar" role="group" aria-label="Répartition des sorties">
-            {parts.map((x) => <button key={x.k} className={tab === x.k ? 'on' : ''} style={{ flex: Math.max(x.v, 1) / barMax, background: x.color }} aria-label={x.label} onClick={() => { setTab(x.k); setMore(false); setOpen(''); }} />)}
-            {resteM > 0 ? <i className="free" style={{ flex: (resteM * monthsN) / barMax }} /> : null}
-          </div>
           <div className="tabs" role="tablist" aria-label="Rubriques">
-            {([['revient', 'Revient', <Repeat key="a" size={20} strokeWidth={1.5} />], ['quotidien', 'Quotidien', <ShoppingBasket key="b" size={20} strokeWidth={1.5} />], ['exceptionnel', 'Exceptionnel', <Zap key="c" size={20} strokeWidth={1.5} />], ['evolution', 'Évolution', <TrendingUp key="d" size={20} strokeWidth={1.5} />], ['immo', 'Immobilier', <Building2 key="e" size={20} strokeWidth={1.5} />]] as [typeof tab, string, ReactElement][]).map(([k, l, ic]) => (
+            {([['synthese', 'Synthèse', <LayoutGrid key="s" size={20} strokeWidth={1.5} />], ['revient', 'Revient', <Repeat key="a" size={20} strokeWidth={1.5} />], ['quotidien', 'Quotidien', <ShoppingBasket key="b" size={20} strokeWidth={1.5} />], ['exceptionnel', 'Exceptionnel', <Zap key="c" size={20} strokeWidth={1.5} />], ['immo', 'Immobilier', <Building2 key="e" size={20} strokeWidth={1.5} />]] as [typeof tab, string, ReactElement][]).map(([k, l, ic]) => (
               <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setTab(k); setMore(false); setOpen(''); }}>{ic}<span>{l}</span></button>
             ))}
           </div>
@@ -447,26 +538,44 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           {tab === 'quotidien' ? <ListView tabKey="quotidien" items={rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, plural(x.count, 'paiement')], lines: x.lines }))} /> : null}
           {tab === 'exceptionnel' ? <ListView tabKey="exceptionnel" items={rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))} /> : null}
 
-          {tab === 'evolution' ? (
+          {tab === 'synthese' ? (
             <section>
-              {rec.comparedMonths === 0 ? <p className="muted small">Les relevés ne remontent pas assez loin pour comparer à l’année précédente.</p> : <p className="muted small">Comparé aux mêmes mois un an plus tôt ({rec.comparedMonths} mois).</p>}
-              {rec.categories.length > 0 ? (
-                <ul className="rows">
-                  {rec.categories.slice(0, 6).map((c) => (
-                    <li key={c.category} className="plain">
-                      <span className="n">{LABEL[c.category] ?? c.category}<small>{money(c.prior)} → {money(c.perYear)}</small></span>
-                      <span className={'delta ' + (c.delta > 0 ? 'up' : 'down')}>{c.delta > 0 ? '+' : ''}{money(c.delta)}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              {moving.length > 0 ? (
+              <div className="duo">
+                <div className="side">
+                  <p className="lbl">Gains</p>
+                  <p className="amt">{money(rec.income)}</p>
+                  <Cmp now={rec.income} before={rec.compare.income} goodUp />
+                  <ul className="split">
+                    {rec.incomeBy.map((x) => (
+                      <li key={x.label}><span>{x.label}</span><b>{money(x.amount)}</b><i style={{ width: `${rec.income > 0 ? Math.min(100, (x.amount / rec.income) * 100) : 0}%`, background: '#2f7d4f' }} /></li>
+                    ))}
+                  </ul>
+                  {rec.incomeOnce > 0 ? <p className="muted small">Hors habituel, non compté: {money(rec.incomeOnce)}</p> : null}
+                </div>
+                <div className="side">
+                  <p className="lbl">Dépenses</p>
+                  <p className="amt">{money(spendYear)}</p>
+                  <Cmp now={spendYear} before={rec.compare.spend} />
+                  <ul className="split">
+                    {parts.map((x) => (
+                      <li key={x.k}><button onClick={() => { setTab(x.k); setMore(false); setOpen(''); }}><span>{x.label}</span><b>{money(x.v)}</b></button><i style={{ width: `${spendYear > 0 ? Math.min(100, (x.v / spendYear) * 100) : 0}%`, background: x.color }} /></li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              {moving.length > 0 || rec.categories.length > 0 ? (
                 <>
-                  <h3 className="subtitle">Fournisseurs</h3>
+                  <h3 className="subtitle">Ce qui a changé</h3>
                   <ul className="rows">
-                    {moving.map((x) => (
+                    {rec.categories.slice(0, 3).map((c) => (
+                      <li key={c.category} className="plain">
+                        <span className="n">{LABEL[c.category] ?? c.category}<small>{money(c.prior)} en {priorLabel} → {money(c.perYear)}</small></span>
+                        <span className={'delta ' + (c.delta > 0 ? 'up' : 'down')}>{c.delta > 0 ? '+' : ''}{money(c.delta)}</span>
+                      </li>
+                    ))}
+                    {moving.slice(0, 4).map((x) => (
                       <li key={x.key} className="plain">
-                        <span className="n">{x.label}<small>{x.prior !== null && x.prior !== undefined ? `${money(x.prior)} → ${money(x.perYear)}` : ''}</small></span>
+                        <span className="n">{x.label}<small>{x.prior !== null && x.prior !== undefined ? `${money(x.prior)} en ${priorLabel} → ${money(x.perYear)}` : ''}</small></span>
                         <span className={'delta ' + ((x.delta ?? 0) > 0 ? 'up' : 'down')}>{(x.delta ?? 0) > 0 ? '+' : ''}{money(x.delta ?? 0)}</span>
                       </li>
                     ))}
@@ -477,8 +586,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                 <>
                   <h3 className="subtitle">À comparer ou renégocier</h3>
                   <ul className="rows">
-                    {levers.map((x) => (
-                      <li key={x.key} className="plain"><span className="n">{x.label}</span><span className="v">{money(x.perYear)}</span></li>
+                    {levers.slice(0, 4).map((x) => (
+                      <li key={x.key} className="plain"><span className="n">{x.label}<small>{x.cadence}</small></span><span className="v">{money(x.perYear)}</span></li>
                     ))}
                   </ul>
                 </>
@@ -487,39 +596,27 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           ) : null}
 
           {tab === 'immo' ? (
-            <section>
-              <div className="biens">
-                {bienNames.map((bien) => {
-                  const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
-                  const home = (b.homes ?? []).includes(bien);
-                  const dec = state.decomptes.find((d) => d.bien === bien);
-                  const items = [...rec.recurring.filter((x) => x.bien === bien).map((x) => ({ n: x.label, v: x.perYear })), ...rec.works.filter((x) => (x.bien ?? 'À rattacher') === bien).map((x) => ({ n: `${x.label}, ${dateFr(x.date)}`, v: x.amount }))];
-                  return (
-                    <div className="bien" key={bien}>
-                      <div className="bn">{bien}</div>
-                      <ul className="mini">
-                        {!home && v.loyers > 0 ? <li><span>Loyers reçus</span><b>{money(v.loyers)}</b></li> : null}
-                        {items.map((it, i) => <li key={i}><span>{it.n}</span><b>{money(it.v)}</b></li>)}
-                        {!home ? <li className="net"><span>Net</span><b>{money(v.loyers - v.charges)}</b></li> : null}
-                      </ul>
-                      {dec ? (
-                        <details className="decompte">
-                          <summary>Décompte de copropriété, {dateFr(dec.from)} au {dateFr(dec.to)}</summary>
-                          <ul className="mini">
-                            {dec.paid > 0 ? <li><span>Versé à la PPE</span><b>{money(dec.paid)}</b></li> : null}
-                            <li><span>Charges de l’exercice</span><b>{money(dec.total)}</b></li>
-                            {dec.paid > dec.total ? <li><span>Chauffage, provisions et fonds de rénovation</span><b>{money(dec.paid - dec.total)}</b></li> : null}
-                            {dec.solde !== null ? <li className="net"><span>{dec.solde < 0 ? 'À payer' : dec.settled ? `Solde déduit du versement du ${dateFr(dec.settled)}` : 'À recevoir'}</span><b>{money(Math.abs(dec.solde))}</b></li> : null}
-                          </ul>
-                          <ul className="mini sm">
-                            {dec.lines.map((ln, i) => <li key={i}><span>{ln.label}</span><b>{money(ln.amount)}</b></li>)}
-                          </ul>
-                        </details>
-                      ) : null}
+            <section className="immo">
+              {homeProps.length > 0 ? (
+                <>
+                  <h3 className="subtitle first">Résidence principale</h3>
+                  {homeProps.map((p) => <PropCard key={p.bien} p={p} />)}
+                </>
+              ) : null}
+              {invProps.length > 0 ? (
+                <>
+                  <h3 className="subtitle">Investissements</h3>
+                  {invSummary ? (
+                    <div className="inds big">
+                      <span className={'ind ' + invSummary.tone.r}><TrendingUp size={18} strokeWidth={1.6} /><b>{invSummary.rend !== null ? pctPlain(invSummary.rend) : '—'}</b><small>rendement net</small></span>
+                      <span className={'ind ' + invSummary.tone.c}><Wallet size={18} strokeWidth={1.6} /><b>{money(invSummary.cash)}</b><small>par mois, après intérêts</small></span>
+                      <span className={'ind ' + invSummary.tone.l}><Landmark size={18} strokeWidth={1.6} /><b>{invSummary.ltv !== null ? pctPlain(invSummary.ltv) : '—'}</b><small>de dette</small></span>
                     </div>
-                  );
-                })}
-              </div>
+                  ) : null}
+                  {invProps.map((p) => <PropCard key={p.bien} p={p} />)}
+                  <p className="muted small">Rendement net: loyers moins charges courantes (avant intérêts) sur la valeur estimée. Cash-flow: ce qui reste chaque mois après intérêts et travaux. Dette: hypothèque sur valeur estimée.</p>
+                </>
+              ) : null}
               {bienNames.length === 0 ? <p className="muted small">Ajoute tes biens dans Documents, « Mes biens ».</p> : null}
             </section>
           ) : null}
