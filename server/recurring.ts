@@ -50,6 +50,8 @@ export interface OneOff {
 export interface RecurringView {
   /** Les douze mois pris en compte, du plus ancien au plus récent. */
   months: string[];
+  /** Nombre de mois comparés à la même période un an plus tôt (0 si l'historique manque). */
+  comparedMonths: number;
   income: number;
   recurring: RecurringItem[];
   merchants: Merchant[];
@@ -69,7 +71,7 @@ interface Row {
 
 const NOT_SPEND = new Set(['interne', 'epargne', 'revenu', 'exceptionnel', 'doublon']);
 // Un montant qui varie beaucoup d'un mois à l'autre (intérêts semestriels, primes) reste un engagement pour ces catégories.
-const LOOSE = new Set(['logement', 'assurances', 'energie', 'telecom', 'banque']);
+const LOOSE = new Set(['logement', 'assurances', 'energie', 'telecom', 'banque', 'famille', 'enfants']);
 const FIXED = new Set(['logement', 'assurances', 'energie', 'telecom', 'abonnements', 'banque', 'vehicule', 'enfants', 'famille']);
 const LEVER = new Set(['assurances', 'telecom', 'abonnements', 'banque', 'energie']);
 const ONE_OFF_CATEGORIES = new Set(['impots', 'travaux']);
@@ -103,15 +105,24 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
   // Les douze derniers mois complets, et les douze précédents pour comparer.
   const all = [...new Set(rows.map((r) => r.date.slice(0, 7)))].filter((m) => m < current).sort();
   const last = all[all.length - 1];
-  const empty: RecurringView = { months: [], income: 0, recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0 } };
+  const empty: RecurringView = { months: [], comparedMonths: 0, income: 0, recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0 } };
   if (!last) return empty;
   const end = monthIndex(last);
   const inWindow = (m: string) => monthIndex(m) > end - 12 && monthIndex(m) <= end;
   const inPrior = (m: string) => monthIndex(m) > end - 24 && monthIndex(m) <= end - 12;
   const months = all.filter(inWindow);
-  const dataStart = monthIndex(all[0]);
-  // La comparaison n'a de sens que si les douze mois d'avant sont couverts au moins à moitié.
-  const priorCovered = all.filter(inPrior).length >= 6 && dataStart <= end - 12 - 5;
+  // Les relevés réellement complets commencent au premier mois fourni (au moins 40 % du volume habituel), pas à la première ligne isolée d'un vieux compte.
+  const perMonthCount = new Map<string, number>();
+  for (const r of rows) perMonthCount.set(r.date.slice(0, 7), (perMonthCount.get(r.date.slice(0, 7)) ?? 0) + 1);
+  const recentCounts = months.map((m) => perMonthCount.get(m) ?? 0).sort((a, b) => a - b);
+  const threshold = Math.max(3, 0.4 * (recentCounts[Math.floor(recentCounts.length / 2)] ?? 0));
+  const denseStart = all.find((m) => (perMonthCount.get(m) ?? 0) >= threshold);
+  const denseIdx = denseStart ? monthIndex(denseStart) : Infinity;
+  // On ne compare que les mois dont le mois jumeau, un an plus tôt, est couvert: « même période l'an dernier ».
+  const pairMonths = months.filter((m) => monthIndex(m) - 12 >= denseIdx);
+  const inPair = (m: string) => pairMonths.includes(m);
+  const inPairPrior = (m: string) => pairMonths.some((x) => monthIndex(x) - 12 === monthIndex(m));
+  const priorCovered = pairMonths.length >= 6;
 
   const spend = rows.filter((r) => r.amount < 0 && !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))));
   const income = rows.filter((r) => r.category === 'revenu' && r.amount > 0 && inWindow(r.date.slice(0, 7))).reduce((t, r) => t + toChf(r.amount, r.currency), 0);
@@ -171,9 +182,10 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     const isAnnual = !generic && (LEVER.has(category) ? perYearOf(win) >= 100 : FIXED.has(category)) && winMonths.length === 1 && (LEVER.has(category) || monthsSet.some((m) => Math.abs(m - monthIndex(winMonths[0]) + 12) <= 1 || Math.abs(m - monthIndex(winMonths[0]) - 12) <= 1));
 
     const perYear = sum(win, () => true);
-    const prior = priorCovered ? sum(g.rows, inPrior) : null;
-    const trend = prior !== null && prior > 50 ? perYear / prior - 1 : null;
-    const delta = prior !== null && prior > 50 ? perYear - prior : null;
+    const prior = priorCovered ? sum(g.rows, inPairPrior) : null;
+    const now12 = priorCovered ? sum(g.rows, inPair) : 0;
+    const trend = prior !== null && prior > 50 ? now12 / prior - 1 : null;
+    const delta = prior !== null && prior > 50 ? ((now12 - prior) * 12) / pairMonths.length : null;
     const bien = win.find((r) => r.bien)?.bien ?? null;
 
     if (isFixed || isStable || isAnnual) {
@@ -199,5 +211,5 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
   recurring.sort((a, b) => b.perYear - a.perYear);
   merchants.sort((a, b) => b.total - a.total);
   oneOffs.sort((a, b) => b.amount - a.amount);
-  return { months, income, recurring, merchants, oneOffs, totals };
+  return { months, comparedMonths: priorCovered ? pairMonths.length : 0, income, recurring, merchants, oneOffs, totals };
 }
