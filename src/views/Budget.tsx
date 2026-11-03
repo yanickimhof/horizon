@@ -346,6 +346,21 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           {tab === 'evolution' ? (
             <section>
               <p className="sub">{rec.comparedMonths > 0 ? `Les ${rec.comparedMonths} derniers mois comparés aux mêmes mois un an plus tôt, fournisseur par fournisseur. L’écart est ramené à l’année.` : 'Les relevés ne remontent pas assez loin pour comparer à l’année précédente.'}</p>
+              {rec.categories.length > 0 ? (
+                <>
+                  <h3 className="subtitle">Par domaine</h3>
+                  <ul className="rows">
+                    {rec.categories.slice(0, 6).map((c) => (
+                      <li key={c.category}>
+                        <span className="n">{LABEL[c.category] ?? c.category}</span>
+                        <span className={'chip ' + (c.trend > 0 ? 'up' : 'down')}>{pct(c.trend)}</span>
+                        <span className="v">{c.delta > 0 ? '+' : ''}{money(c.delta)}<small>par an</small></span>
+                      </li>
+                    ))}
+                  </ul>
+                  <h3 className="subtitle">Par fournisseur</h3>
+                </>
+              ) : null}
               {moving.length > 0 ? (
                 <ul className="rows">
                   {moving.map((x) => (

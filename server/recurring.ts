@@ -47,7 +47,16 @@ export interface OneOff {
   bien: string | null;
 }
 
+export interface CategoryMove {
+  category: string;
+  perYear: number;
+  trend: number;
+  delta: number;
+}
+
 export interface RecurringView {
+  /** Variations par catégorie: un changement de fournisseur (autre assurance, autre opérateur) s'y lit d'un coup. */
+  categories: CategoryMove[];
   /** Les douze mois pris en compte, du plus ancien au plus récent. */
   months: string[];
   /** Nombre de mois comparés à la même période un an plus tôt (0 si l'historique manque). */
@@ -105,7 +114,7 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
   // Les douze derniers mois complets, et les douze précédents pour comparer.
   const all = [...new Set(rows.map((r) => r.date.slice(0, 7)))].filter((m) => m < current).sort();
   const last = all[all.length - 1];
-  const empty: RecurringView = { months: [], comparedMonths: 0, income: 0, recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0 } };
+  const empty: RecurringView = { categories: [], months: [], comparedMonths: 0, income: 0, recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0 } };
   if (!last) return empty;
   const end = monthIndex(last);
   const inWindow = (m: string) => monthIndex(m) > end - 12 && monthIndex(m) <= end;
@@ -208,8 +217,29 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     if (dailyTotal >= 100) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: win.length, trend, delta });
   }
 
+  // Par catégorie, pour que le passage d'un fournisseur à un autre ne passe pas pour une baisse ou une hausse.
+  const categories: CategoryMove[] = [];
+  if (priorCovered) {
+    const byCat = new Map<string, { now: number; prior: number; year: number }>();
+    for (const r of spend) {
+      const m = r.date.slice(0, 7);
+      const c = byCat.get(r.category) ?? { now: 0, prior: 0, year: 0 };
+      const chf = -toChf(r.amount, r.currency);
+      if (inWindow(m)) c.year += chf;
+      if (inPair(m)) c.now += chf;
+      if (inPairPrior(m)) c.prior += chf;
+      byCat.set(r.category, c);
+    }
+    for (const [category, c] of byCat) {
+      if (c.prior < 200) continue;
+      const trend = c.now / c.prior - 1;
+      const delta = ((c.now - c.prior) * 12) / pairMonths.length;
+      if (Math.abs(trend) >= 0.1 && Math.abs(delta) >= 300) categories.push({ category, perYear: c.year, trend, delta });
+    }
+    categories.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  }
   recurring.sort((a, b) => b.perYear - a.perYear);
   merchants.sort((a, b) => b.total - a.total);
   oneOffs.sort((a, b) => b.amount - a.amount);
-  return { months, comparedMonths: priorCovered ? pairMonths.length : 0, income, recurring, merchants, oneOffs, totals };
+  return { categories: categories.slice(0, 8), months, comparedMonths: priorCovered ? pairMonths.length : 0, income, recurring, merchants, oneOffs, totals };
 }
