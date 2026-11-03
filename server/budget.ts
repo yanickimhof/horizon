@@ -452,12 +452,12 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
       months.set(r.date.slice(0, 7), m);
       perPayer.set(pk, months);
     }
-    const out = new Map<string, Record<string, number>>();
+    const out = new Map<string, { ratios: Record<string, number>; amounts: Record<string, number> }>();
     for (const [pk, months] of perPayer) {
       const detailed = [...months.entries()].filter(([, v]) => Object.keys(v).length >= 2).sort((a, b) => b[0].localeCompare(a[0]))[0];
       if (!detailed) continue;
       const total = Object.values(detailed[1]).reduce((t, v) => t + v, 0);
-      out.set(pk, Object.fromEntries(Object.entries(detailed[1]).map(([k, v]) => [k, v / total])));
+      out.set(pk, { ratios: Object.fromEntries(Object.entries(detailed[1]).map(([k, v]) => [k, v / total])), amounts: detailed[1] });
     }
     return out;
   })();
@@ -483,8 +483,11 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
     } else if (r.category === 'revenu' && chf > 0 && /loyer|g[ée]rance|r[ée]gie|immobili|versement disponible|mietzins|verwaltung/i.test(r.label)) {
       // Un loyer reçu d'une régie: réparti selon ses versements détaillés, sinon compté à part tant qu'aucun bien n'est désigné.
       const shares = rentShares.get(payeeKey(r.label));
-      if (shares) {
-        for (const [bien, part] of Object.entries(shares)) {
+      // On ne répartit qu'un versement qui vaut un ou plusieurs mois de loyers complets; un solde ou une régularisation reste à rattacher.
+      const monthly = shares ? Object.values(shares.amounts).reduce((t, v) => t + v, 0) : 0;
+      const multiple = monthly > 0 && Math.abs(chf / monthly - Math.round(chf / monthly)) < 0.02;
+      if (shares && multiple) {
+        for (const [bien, part] of Object.entries(shares.ratios)) {
           const b = (e.immo[bien] = e.immo[bien] ?? { loyers: 0, charges: 0 });
           b.loyers += chf * part;
         }

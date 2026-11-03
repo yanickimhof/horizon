@@ -299,3 +299,14 @@ describe('versement éclaté', () => {
     expect(v.incomeBy.map((x) => x.label)).toContain('Salaire de novembre');
   });
 });
+
+describe('soldes de loyers', () => {
+  it('ne répartit pas un solde qui ne vaut pas des mois complets', () => {
+    const l = new Ledger(':memory:');
+    storeStatements(l, [stmt('Loyer', [['2026-01-20', 'REGIE EXEMPLE SA, Lausanne Loyer studio', 1000], ['2026-01-20', 'REGIE EXEMPLE SA, Lausanne Loyer villa', 3000], ['2025-12-09', 'REGIE EXEMPLE SA, Lausanne Versement disponible', 4000], ['2025-09-09', 'REGIE EXEMPLE SA, Lausanne Versement disponible', 2500]])], 'l.csv');
+    setBiens(l, [{ re: 'studio', bien: 'Studio' }, { re: 'villa', bien: 'Villa' }]);
+    const v = budgetView(l, new Date('2026-03-01'));
+    expect(v.months.find((m) => m.month === '2025-12')!.immo['Non réparti']).toBeUndefined();
+    expect(Math.round(v.months.find((m) => m.month === '2025-09')!.immo['Non réparti'].loyers)).toBe(2500);
+  });
+});
