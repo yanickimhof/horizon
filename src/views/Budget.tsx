@@ -318,7 +318,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const factsAssets = state.facts.filter((f) => f.key.startsWith('asset:') && f.data.class === 'real_estate');
   const factsDebts = state.facts.filter((f) => f.key.startsWith('liability:') && typeof f.data.balance === 'number');
   const factor = 12 / Math.max(used.length, 1);
-  type Prop = { bien: string; home: boolean; commune: string; valeur: number | null; dette: number; taux: number | null; loyers: number; charges: number; interets: number; travaux: number; autres: number; rend: number | null; cash: number; ltv: number | null; items: { n: string; v: number }[] };
+  type Prop = { bien: string; home: boolean; commune: string; valeur: number | null; valeurNote: string; valeurLow: number | null; valeurHigh: number | null; dette: number; taux: number | null; loyers: number; charges: number; interets: number; travaux: number; autres: number; rend: number | null; cash: number; ltv: number | null; items: { n: string; v: number }[] };
   const props: Prop[] = bienNames.map((bien) => {
     const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
     const asset = factsAssets.find((f) => nrm(String(f.data.label ?? '')).includes(nrm(bien)));
@@ -333,7 +333,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     const autres = Math.max(0, v.charges - interets - travaux);
     const noi = (v.loyers - autres) * factor;
     return {
-      bien, home, commune: String(asset?.data.commune ?? ''), valeur, dette, taux, loyers: v.loyers, charges: v.charges, interets, travaux, autres,
+      bien, home, commune: String(asset?.data.commune ?? ''), valeur, valeurNote: String(asset?.data.valueNote ?? ''), valeurLow: typeof asset?.data.estimateLow === 'number' ? Number(asset.data.estimateLow) : null, valeurHigh: typeof asset?.data.estimateHigh === 'number' ? Number(asset.data.estimateHigh) : null, dette, taux, loyers: v.loyers, charges: v.charges, interets, travaux, autres,
       rend: valeur && !home ? noi / valeur : null,
       cash: (v.loyers - v.charges) / Math.max(used.length, 1),
       ltv: valeur && dette > 0 ? dette / valeur : null,
@@ -380,6 +380,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           {p.items.map((it, i) => <li key={i}><span>{it.n}</span><b>{money(it.v)}</b></li>)}
           {!p.home ? <li className="net"><span>Net</span><b>{money(p.loyers - p.charges)}</b></li> : null}
           {p.valeur ? <li className="sep"><span>Valeur estimée</span><b>{money(p.valeur)}</b></li> : null}
+          {p.valeur && (p.valeurLow !== null && p.valeurHigh !== null) ? <li className="muted small"><span>Fourchette</span><b>{money(p.valeurLow)} à {money(p.valeurHigh)}</b></li> : null}
+          {p.valeur && p.valeurNote ? <li className="muted small"><span>{p.valeurNote}</span></li> : null}
           {p.dette > 0 ? <li><span>Hypothèque{p.taux !== null ? `, taux moyen ${pctPlain(p.taux)}` : ''}</span><b>{money(p.dette)}</b></li> : null}
         </ul>
         {(() => {
@@ -613,7 +615,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                     </div>
                   ) : null}
                   {invProps.map((p) => renderProp(p))}
-                  <p className="muted small">Rendement net: loyers moins charges courantes (avant intérêts) sur la valeur estimée. Cash-flow: ce qui reste chaque mois après intérêts et travaux. Dette: hypothèque sur valeur estimée.</p>
+                  <p className="muted small">Rendement net: loyers moins charges courantes (avant intérêts) sur la valeur estimée, donc indicatif tant que cette valeur n’est pas une expertise. Cash-flow: ce qui reste chaque mois après intérêts et travaux. Dette: hypothèque sur valeur estimée.</p>
                 </>
               ) : null}
               {bienNames.length === 0 ? <p className="muted small">Ajoute tes biens dans Documents, « Mes biens ».</p> : null}
