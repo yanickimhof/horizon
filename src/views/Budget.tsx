@@ -256,7 +256,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     let live = true;
     api.recurring(db, period).then((r) => { if (live) setRecAlt(r); }).catch(() => { if (live) setRecAlt(null); });
     return () => { live = false; };
-  }, [period, db, state.budget.count]);
+  }, [period, db, state.budget.count, state.fournisseurs, state.recurring]);
   const rec = period === '12' || !recAlt ? state.recurring : recAlt;
   const [open, setOpen] = useState('');
   const [tab, setTab] = useState<'synthese' | 'revient' | 'quotidien' | 'exceptionnel' | 'immo'>('synthese');

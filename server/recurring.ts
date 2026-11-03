@@ -208,7 +208,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   const compact = (n: string) => normalizeLabel(n).replace(/[^a-z0-9]/g, '');
   const baseName = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name);
   const baseKey = (r: Row): string => compact(baseName(r));
-  const aliasOf = (r: Row) => aliases.find((x) => (x.re && new RegExp(x.re, 'i').test(r.label)) || (x.key && !isGenericPayee(r.label) && x.key === baseKey(r)));
+  const aliasOf = (r: Row) => aliases.find((x) => (x.re && new RegExp(x.re, 'i').test(r.label)) || (x.key && x.key === baseKey(r)));
   const spend = rows
     // Les remboursements (assurance, impôts, achats retournés) sont gardés: ils viennent en déduction du même fournisseur.
     .filter((r) => !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))))
@@ -230,7 +230,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     const k = normalizeLabel(name).replace(/[^a-z0-9]/g, '');
     const g = groups.get(k) ?? { key: k, label: isGenericPayee(r.label) ? r.label.slice(0, 40) : name, rows: [], cat: new Map<string, number>(), bases: new Set<string>() };
     g.rows.push(r);
-    if (!isGenericPayee(r.label)) g.bases.add(baseKey(r));
+    g.bases.add(baseKey(r));
     g.cat.set(r.category, (g.cat.get(r.category) ?? 0) + Math.abs(toChf(r.amount, r.currency)));
     groups.set(k, g);
   }
@@ -322,7 +322,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     const dailyRows: Row[] = [];
     for (const r of chosen) {
       const chf = -toChf(r.amount, r.currency);
-      const entry = { label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien, text: r.label.replace(/\s+/g, ' ').slice(0, 110), bases: isGenericPayee(r.label) ? [] : [baseKey(r)] };
+      const entry = { label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien, text: r.label.replace(/\s+/g, ' ').slice(0, 110), bases: [baseKey(r)] };
       if (r.bien || r.category === 'travaux') {
         works.push(entry);
         totals.works += chf;
