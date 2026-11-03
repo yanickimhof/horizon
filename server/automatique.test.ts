@@ -183,3 +183,19 @@ describe('un fournisseur se dit comme on le dit', () => {
     expect(supplierOf('PPE OSIRIS 7 A, p.a. Gérance SA, 1040 Echallens', { ...me, bien: 'Osiris' }).name).toBe('Charges PPE, Osiris');
   });
 });
+
+describe('noms de fournisseurs choisis', () => {
+  it('un nom choisi remplace la lecture automatique et regroupe les variantes', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    for (let i = 1; i <= 8; i++) {
+      const m = String(i).padStart(2, '0');
+      rows.push([`2026-${m}-02`, 'Transfert Léa Exemple', -90], [`2026-${m}-12`, 'Léa Exemple, Rue des Exemples 1, 1040 Echallens', -0.5 * 0 - 1]);
+    }
+    storeStatements(l, [stmt('Compte', rows)], 'c.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'famille'");
+    l.setSetting('budget.fournisseurs', JSON.stringify([{ re: 'l[ée]a exemple', name: 'Argent de poche, Léa' }]));
+    const v = recurringView(l, new Date('2026-10-15'));
+    expect(v.recurring.map((r) => r.label)).toContain('Argent de poche, Léa');
+  });
+});
