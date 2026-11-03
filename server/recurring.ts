@@ -33,6 +33,8 @@ export interface RecurringItem {
   lever: boolean;
   /** Les paiements les plus récents de la période, tels que la banque les écrit. */
   lines: Line[];
+  /** Les fournisseurs tels que l'outil les lit, pour qu'une correction vise tout le groupe. */
+  bases: string[];
 }
 
 export interface Line {
@@ -53,6 +55,7 @@ export interface Merchant {
   prior: number | null;
   now: number | null;
   lines: Line[];
+  bases: string[];
 }
 
 export interface OneOff {
@@ -62,6 +65,7 @@ export interface OneOff {
   category: string;
   bien: string | null;
   text: string;
+  bases: string[];
 }
 
 export interface CategoryMove {
@@ -70,6 +74,20 @@ export interface CategoryMove {
   trend: number;
   delta: number;
   prior: number;
+}
+
+export interface Change {
+  key: string;
+  label: string;
+  kind: 'prix' | 'nouveau' | 'arret';
+  /** Montant d'un paiement avant / après (prix), ou le montant courant (nouveau, arrêt). */
+  from: number | null;
+  to: number | null;
+  cadence: string;
+  /** Mois (AAAA-MM) du premier paiement au nouveau tarif, du premier paiement (nouveau) ou du dernier (arrêt). */
+  since: string;
+  /** Effet sur un an, en francs (positif = coûte plus). */
+  yearly: number;
 }
 
 export interface RecurringView {
@@ -92,6 +110,8 @@ export interface RecurringView {
   compare: { income: number | null; spend: number | null; incomeNow: number | null; spendNow: number | null };
   /** Les mois de la période qui ont un jumeau un an plus tôt: ce sont eux, et eux seuls, qui servent aux comparaisons. */
   pairMonths: string[];
+  /** Vrais changements de tarif des charges fixes (prime, abonnement), nouveaux abonnements et arrêts. */
+  changes: Change[];
   recurring: RecurringItem[];
   merchants: Merchant[];
   oneOffs: OneOff[];
@@ -143,7 +163,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
 
   const all = [...new Set(rows.map((r) => r.date.slice(0, 7)))].filter((m) => m < current).sort();
   const last = all[all.length - 1];
-  const empty: RecurringView = { categories: [], works: [], months: [], comparedMonths: 0, priorMonths: [], income: 0, incomeBy: [], incomeOnce: 0, compare: { income: null, spend: null, incomeNow: null, spendNow: null }, pairMonths: [], recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0, works: 0 } };
+  const empty: RecurringView = { categories: [], works: [], months: [], comparedMonths: 0, priorMonths: [], income: 0, incomeBy: [], incomeOnce: 0, compare: { income: null, spend: null, incomeNow: null, spendNow: null }, pairMonths: [], changes: [], recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0, works: 0 } };
   if (!last) return empty;
   // La période choisie: 12 derniers mois, une année (à ce jour si elle n'est pas finie) ou un mois.
   const range = period.match(/^(\d{4}-\d{2})\.\.(\d{4}-\d{2})$/);
@@ -170,42 +190,47 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   const priorCovered = pairMonths.length >= Math.min(6, sel.length);
   const scale = pairMonths.length > 0 ? sel.length / pairMonths.length : 1;
 
-  // Noms (et au besoin catégories) choisis par l'utilisateur: réglage « budget.fournisseurs », liste de { re, name, category? }.
-  const aliases = (() => {
-    try {
-      return (JSON.parse(l.getSetting('budget.fournisseurs') || '[]') as { re: string; name: string; category?: string }[]).filter((a) => a.re && a.name);
-    } catch {
-      return [];
-    }
-  })();
-  const aliasOf = (label: string) => aliases.find((a) => new RegExp(a.re, 'i').test(label));
-  const spend = rows
-    // Les remboursements (assurance, impôts, achats retournés) sont gardés: ils viennent en déduction du même fournisseur.
-    .filter((r) => !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))))
-    .map((r) => {
-      const hit = aliasOf(r.label);
-      return hit?.category ? { ...r, category: hit.category } : r;
-    });
-
   // Un fournisseur est ce qu'on dirait à voix haute: « Migros », « CSS », « Intérêts hypothécaires, Osiris ».
   const hh = l.current().find((x) => x.key === 'household');
   const selfNames = [
     ...(typeof hh?.data.name === 'string' ? [normalizeLabel(String(hh.data.name))] : []),
     ...(Array.isArray(hh?.data.members) ? (hh!.data.members as { name?: unknown; role?: unknown }[]).filter((m) => m.role !== 'child' && typeof m.name === 'string').map((m) => normalizeLabel(String(m.name))) : []),
   ].filter((n) => n.length >= 3);
+  // Noms (et au besoin catégories) choisis par l'utilisateur: réglage « budget.fournisseurs », liste de { re? | key?, name, category? }.
+  // Une règle « key » vise un fournisseur tel que l'outil le lit (toutes ses variantes), une règle « re » un libellé précis.
+  const aliases = (() => {
+    try {
+      return (JSON.parse(l.getSetting('budget.fournisseurs') || '[]') as { re?: string; key?: string; name: string; category?: string }[]).filter((x) => (x.re || x.key) && x.name);
+    } catch {
+      return [];
+    }
+  })();
+  const compact = (n: string) => normalizeLabel(n).replace(/[^a-z0-9]/g, '');
+  const baseName = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name);
+  const baseKey = (r: Row): string => compact(baseName(r));
+  const aliasOf = (r: Row) => aliases.find((x) => (x.re && new RegExp(x.re, 'i').test(r.label)) || (x.key && !isGenericPayee(r.label) && x.key === baseKey(r)));
+  const spend = rows
+    // Les remboursements (assurance, impôts, achats retournés) sont gardés: ils viennent en déduction du même fournisseur.
+    .filter((r) => !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))))
+    .map((r) => {
+      const hit = aliasOf(r);
+      return hit?.category ? { ...r, category: hit.category } : r;
+    });
+
   const supplier = (r: Row): string => {
-    const hit = aliasOf(r.label);
+    const hit = aliasOf(r);
     if (hit) return hit.name;
     return isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name;
   };
-  type G = { key: string; label: string; rows: Row[]; cat: Map<string, number> };
+  type G = { key: string; label: string; rows: Row[]; cat: Map<string, number>; bases: Set<string> };
   const groups = new Map<string, G>();
   for (const r of spend) {
     const name = supplier(r);
     // Deux écritures du même nom (casse, points, espaces) forment un seul fournisseur.
     const k = normalizeLabel(name).replace(/[^a-z0-9]/g, '');
-    const g = groups.get(k) ?? { key: k, label: isGenericPayee(r.label) ? r.label.slice(0, 40) : name, rows: [], cat: new Map<string, number>() };
+    const g = groups.get(k) ?? { key: k, label: isGenericPayee(r.label) ? r.label.slice(0, 40) : name, rows: [], cat: new Map<string, number>(), bases: new Set<string>() };
     g.rows.push(r);
+    if (!isGenericPayee(r.label)) g.bases.add(baseKey(r));
     g.cat.set(r.category, (g.cat.get(r.category) ?? 0) + Math.abs(toChf(r.amount, r.currency)));
     groups.set(k, g);
   }
@@ -223,7 +248,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     if (premium.length === 0 || care.length < 4) continue;
     g.rows = premium;
     const k = `${g.key} soins`;
-    groups.set(k, { key: k, label: `${g.label}, participations aux soins`, rows: care.map((r) => ({ ...r, category: 'sante' })), cat: new Map([['sante', care.reduce((t, r) => t + Math.abs(toChf(r.amount, r.currency)), 0)]]) });
+    groups.set(k, { key: k, label: `${g.label}, participations aux soins`, rows: care.map((r) => ({ ...r, category: 'sante' })), cat: new Map([['sante', care.reduce((t, r) => t + Math.abs(toChf(r.amount, r.currency)), 0)]]), bases: new Set<string>() });
   }
   const toLines = (rs: Row[]): Line[] => [...rs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map((r) => ({ date: r.date, amount: -toChf(r.amount, r.currency), account: r.account, text: r.label.replace(/\s+/g, ' ').slice(0, 110) }));
 
@@ -231,6 +256,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   const merchants: Merchant[] = [];
   const oneOffs: OneOff[] = [];
   const works: OneOff[] = [];
+  const changes: Change[] = [];
   const totals = { recurring: 0, daily: 0, exceptional: 0, works: 0 };
 
   for (const g of groups.values()) {
@@ -263,8 +289,29 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     const bien = chosen.find((r) => r.bien)?.bien ?? null;
 
     if (isFixed || isStable || isAnnual) {
-      recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, prior: priorScaled, now: nowPair, lever: LEVER.has(category), lines: toLines(chosen) });
+      recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, prior: priorScaled, now: nowPair, lever: LEVER.has(category), lines: toLines(chosen), bases: [...g.bases] });
       totals.recurring += amount;
+      // Tarif: on lit les paiements un par un, en séries de montants voisins.
+      const pays = g.rows.filter((r) => monthIndex(r.date.slice(0, 7)) <= end && r.amount < 0).sort((a, b) => a.date.localeCompare(b.date));
+      const runs: { amount: number; n: number; first: string }[] = [];
+      for (const r of pays) {
+        const v = -toChf(r.amount, r.currency);
+        const last = runs[runs.length - 1];
+        if (last && Math.abs(v - last.amount) <= Math.max(1, last.amount * 0.03)) last.n++;
+        else runs.push({ amount: v, n: 1, first: r.date.slice(0, 7) });
+      }
+      const cad = cadenceOf(monthsSet);
+      const ppy = cad === 'mensuel' ? 12 : cad === 'trimestriel' ? 4 : cad === 'semestriel' ? 2 : cad === 'annuel' ? 1 : 12;
+      const need = ppy >= 12 ? 2 : 1;
+      const cur = runs[runs.length - 1];
+      const before = runs[runs.length - 2];
+      if (cur && before && cur.n >= need && before.n >= need && winMonths.length >= 2 && cur.amount >= 5 && Math.abs(cur.amount - before.amount) >= Math.max(2, before.amount * 0.04) && monthIndex(cur.first) > end - 12) {
+        changes.push({ key: g.key, label: g.label, kind: 'prix', from: before.amount, to: cur.amount, cadence: cad, since: cur.first, yearly: (cur.amount - before.amount) * ppy });
+      } else if (runs.length === 1 && pays.length >= 2 && monthIndex(pays[0].date.slice(0, 7)) > end - 5 && cur.amount >= 5) {
+        changes.push({ key: g.key, label: g.label, kind: 'nouveau', from: null, to: cur.amount, cadence: cad, since: pays[0].date.slice(0, 7), yearly: cur.amount * ppy });
+      } else if (pays.length >= 4 && ppy >= 12 && monthIndex(pays[pays.length - 1].date.slice(0, 7)) < end - 1 && monthIndex(pays[pays.length - 1].date.slice(0, 7)) > end - 12 && cur.amount >= 5) {
+        changes.push({ key: g.key, label: g.label, kind: 'arret', from: cur.amount, to: null, cadence: cad, since: pays[pays.length - 1].date.slice(0, 7), yearly: -cur.amount * ppy });
+      }
       continue;
     }
     // Le reste. Un travail ou un frais lié à un bien va dans l'immobilier. Un impôt ou une grosse dépense inhabituelle est exceptionnel.
@@ -275,7 +322,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     const dailyRows: Row[] = [];
     for (const r of chosen) {
       const chf = -toChf(r.amount, r.currency);
-      const entry = { label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien, text: r.label.replace(/\s+/g, ' ').slice(0, 110) };
+      const entry = { label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien, text: r.label.replace(/\s+/g, ' ').slice(0, 110), bases: isGenericPayee(r.label) ? [] : [baseKey(r)] };
       if (r.bien || r.category === 'travaux') {
         works.push(entry);
         totals.works += chf;
@@ -288,7 +335,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       }
     }
     totals.daily += dailyTotal;
-    if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: dailyRows.length, trend, delta, prior: priorScaled, now: nowPair, lines: toLines(dailyRows) });
+    if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: dailyRows.length, trend, delta, prior: priorScaled, now: nowPair, lines: toLines(dailyRows), bases: [...g.bases] });
   }
 
   // Par catégorie, pour que le passage d'un fournisseur à un autre ne passe pas pour une baisse ou une hausse.
@@ -313,7 +360,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     categories.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   }
   // Les gains par source, et la même période un an plus tôt.
-  const incLabel = (r: Row): string => aliasOf(r.label)?.name ?? (r.bien || /loyer|g[ée]rance|r[ée]gie|immobili|myhome|iloc|mietzins/i.test(r.label) ? 'Loyers' : /ch[oô]mage|arbeitslosen/i.test(r.label) ? 'Chômage' : supplierOf(r.label, { selfNames, bien: r.bien }).name);
+  const incLabel = (r: Row): string => aliasOf(r)?.name ?? (r.bien || /loyer|g[ée]rance|r[ée]gie|immobili|myhome|iloc|mietzins/i.test(r.label) ? 'Loyers' : /ch[oô]mage|arbeitslosen/i.test(r.label) ? 'Chômage' : supplierOf(r.label, { selfNames, bien: r.bien }).name);
   // Un versement peut regrouper plusieurs choses (dernier salaire, bonus, plan social): réglage « budget.eclats », liste de { re, date?, parts: [{ label, amount?, once? }] }.
   // La dernière part reçoit le reste; « once » veut dire hors habituel (non compté dans les gains courants).
   const splits = (() => {
@@ -371,11 +418,12 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   merchants.sort((a, b) => b.total - a.total);
   oneOffs.sort((a, b) => b.amount - a.amount);
   works.sort((a, b) => b.amount - a.amount);
-  return { categories: categories.slice(0, 8), works, months, comparedMonths: priorCovered ? pairMonths.length : 0, priorMonths: priorCovered ? [...priorSet].sort() : [], pairMonths: priorCovered ? pairMonths : [], income, incomeBy, incomeOnce, compare, recurring, merchants, oneOffs, totals };
+  return { categories: categories.slice(0, 8), works, months, comparedMonths: priorCovered ? pairMonths.length : 0, priorMonths: priorCovered ? [...priorSet].sort() : [], pairMonths: priorCovered ? pairMonths : [], income, incomeBy, incomeOnce, compare, changes: changes.sort((a, b) => Math.abs(b.yearly) - Math.abs(a.yearly)).slice(0, 8), recurring, merchants, oneOffs, totals };
 }
 
 export interface Fournisseur {
-  re: string;
+  re?: string;
+  key?: string;
   name: string;
   category?: string;
 }
@@ -393,14 +441,17 @@ export function setFournisseurs(l: Ledger, rules: Fournisseur[]): void {
   const clean: Fournisseur[] = [];
   for (const r of rules) {
     const re = String(r.re ?? '').trim();
+    const key = String(r.key ?? '').trim();
     const name = String(r.name ?? '').trim();
-    if (!re || !name) continue;
-    try {
-      new RegExp(re, 'i');
-    } catch {
-      throw new Error(`Motif invalide: ${re}`);
+    if ((!re && !key) || !name) continue;
+    if (re) {
+      try {
+        new RegExp(re, 'i');
+      } catch {
+        throw new Error(`Motif invalide: ${re}`);
+      }
     }
-    clean.push({ re, name, ...(r.category ? { category: String(r.category) } : {}) });
+    clean.push({ ...(re ? { re } : { key }), name, ...(r.category ? { category: String(r.category) } : {}) });
   }
   l.setSetting('budget.fournisseurs', JSON.stringify(clean));
 }
