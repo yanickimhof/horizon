@@ -206,6 +206,20 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   }
   const sum = (rs: Row[], f: (m: string) => boolean) => rs.filter((r) => f(r.date.slice(0, 7))).reduce((t, r) => t - toChf(r.amount, r.currency), 0);
   const topCat = (g: G) => [...g.cat.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  // Un assureur maladie facture la prime (le même montant qui revient) et, à côté, des participations aux soins (montants variables, remboursements):
+  // on sépare les deux pour que la prime se lise comme un engagement et les soins comme une dépense de santé.
+  for (const g of [...groups.values()]) {
+    if (topCat(g) !== 'assurances' || g.rows.length < 12) continue;
+    const counts = new Map<number, number>();
+    for (const r of g.rows) counts.set(Math.round(-toChf(r.amount, r.currency)), (counts.get(Math.round(-toChf(r.amount, r.currency))) ?? 0) + 1);
+    const repeated = new Set([...counts.entries()].filter(([v, n]) => n >= 4 && v >= 10).map(([v]) => v));
+    const premium = g.rows.filter((r) => repeated.has(Math.round(-toChf(r.amount, r.currency))));
+    const care = g.rows.filter((r) => !repeated.has(Math.round(-toChf(r.amount, r.currency))));
+    if (premium.length === 0 || care.length < 4) continue;
+    g.rows = premium;
+    const k = `${g.key} soins`;
+    groups.set(k, { key: k, label: `${g.label}, participations aux soins`, rows: care.map((r) => ({ ...r, category: 'sante' })), cat: new Map([['sante', care.reduce((t, r) => t + Math.abs(toChf(r.amount, r.currency)), 0)]]) });
+  }
   const toLines = (rs: Row[]): Line[] => [...rs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map((r) => ({ date: r.date, amount: -toChf(r.amount, r.currency), account: r.account, text: r.label.replace(/\s+/g, ' ').slice(0, 110) }));
 
   const recurring: RecurringItem[] = [];
@@ -292,7 +306,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     categories.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   }
   // Les gains par source, et la même période un an plus tôt.
-  const incLabel = (r: Row): string => (r.bien || /loyer|g[ée]rance|r[ée]gie|immobili|myhome|iloc|mietzins/i.test(r.label) ? 'Loyers' : /ch[oô]mage|arbeitslosen/i.test(r.label) ? 'Chômage' : supplierOf(r.label, { selfNames, bien: r.bien }).name);
+  const incLabel = (r: Row): string => aliasOf(r.label)?.name ?? (r.bien || /loyer|g[ée]rance|r[ée]gie|immobili|myhome|iloc|mietzins/i.test(r.label) ? 'Loyers' : /ch[oô]mage|arbeitslosen/i.test(r.label) ? 'Chômage' : supplierOf(r.label, { selfNames, bien: r.bien }).name);
   const incomeRows = rows.filter((r) => r.category === 'revenu' && r.amount > 0);
   const incMap = new Map<string, { amount: number; prior: number }>();
   for (const r of incomeRows) {

@@ -350,12 +350,12 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     const tone = { r: rend === null ? '' : rend >= 0.03 ? 'ok' : rend >= 0.02 ? 'mid' : 'bad', c: cash >= 0 ? 'ok' : 'bad', l: ltv === null ? '' : ltv <= 0.6 ? 'ok' : ltv <= 0.75 ? 'mid' : 'bad' };
     return { rend, cash, ltv, tone };
   })();
-  const PropCard = ({ p }: { p: Prop }) => {
+  const renderProp = (p: Prop) => {
     const tr = p.rend === null ? '' : p.rend >= 0.03 ? 'ok' : p.rend >= 0.02 ? 'mid' : 'bad';
     const tl2 = p.ltv === null ? '' : p.ltv <= 0.6 ? 'ok' : p.ltv <= 0.75 ? 'mid' : 'bad';
     const monthlyCost = (p.charges) / Math.max(used.length, 1);
     return (
-      <details className="prop">
+      <details key={p.bien} className="prop">
         <summary>
           <span className="pn">{p.bien}{p.commune ? <small>{p.commune}</small> : null}</span>
           {p.home ? (
@@ -441,10 +441,10 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const [groupBy, setGroupBy] = useState<Record<string, boolean>>({ exceptionnel: true });
   const [openGroup, setOpenGroup] = useState('');
   const note = (it: Item) => (it.trend !== null && it.trend !== undefined && it.delta !== null && it.delta !== undefined && it.prior !== null && it.prior !== undefined && Math.abs(it.trend) >= 0.1 && Math.abs(it.delta) >= 100 ? { text: `${it.trend > 0 ? '↑' : '↓'} ${pct(it.trend)} · ${money(it.prior)} en ${priorLabel}`, tone: it.trend > 0 ? 'up' : 'down' } : null);
-  const Row = ({ it }: { it: Item }) => {
+  const renderRow = (it: Item) => {
     const n = note(it);
     return (
-      <li className={open === it.id ? 'open' : ''}>
+      <li key={it.id} className={open === it.id ? 'open' : ''}>
         <button className="rowbtn" onClick={() => setOpen(open === it.id ? '' : it.id)} aria-expanded={open === it.id}>
           <span className="n">{it.name}{n ? <small className={'chg ' + n.tone}>{n.text}</small> : null}</span>
           <span className="v">{money(it.amount)}</span>
@@ -478,7 +478,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     );
   };
   const sorter = (a: { name: string; amount: number }, b: { name: string; amount: number }) => (sortBy === 'nom' ? a.name.localeCompare(b.name, 'fr') : b.amount - a.amount);
-  const ListView = ({ tabKey, items }: { tabKey: string; items: Item[] }) => {
+  const renderList = (tabKey: string, items: Item[]) => {
     const grouped = !!groupBy[tabKey];
     const sorted = [...items].sort(sorter);
     const shown = more ? sorted : sorted.slice(0, 8);
@@ -503,13 +503,13 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   <span className="n">{g.name}<small>{plural(g.list.length, 'ligne')}</small></span>
                   <span className="v">{money(g.amount)}</span>
                 </button>
-                {openGroup === tabKey + g.cat ? <ul className="rows sub">{g.list.map((it) => <Row key={it.id} it={it} />)}</ul> : null}
+                {openGroup === tabKey + g.cat ? <ul className="rows sub">{g.list.map((it) => renderRow(it))}</ul> : null}
               </li>
             ))}
           </ul>
         ) : (
           <>
-            <ul className="rows">{shown.map((it) => <Row key={it.id} it={it} />)}</ul>
+            <ul className="rows">{shown.map((it) => renderRow(it))}</ul>
             {items.length > 8 ? <button className="morelink" onClick={() => setMore(!more)}>{more ? 'Réduire' : `Voir les ${items.length - 8} autres`}</button> : null}
           </>
         )}
@@ -534,9 +534,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             ))}
           </div>
 
-          {tab === 'revient' ? <ListView tabKey="revient" items={rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))} /> : null}
-          {tab === 'quotidien' ? <ListView tabKey="quotidien" items={rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, plural(x.count, 'paiement')], lines: x.lines }))} /> : null}
-          {tab === 'exceptionnel' ? <ListView tabKey="exceptionnel" items={rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))} /> : null}
+          {tab === 'revient' ? renderList('revient', rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))) : null}
+          {tab === 'quotidien' ? renderList('quotidien', rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, plural(x.count, 'paiement')], lines: x.lines }))) : null}
+          {tab === 'exceptionnel' ? renderList('exceptionnel', rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))) : null}
 
           {tab === 'synthese' ? (
             <section>
@@ -600,7 +600,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
               {homeProps.length > 0 ? (
                 <>
                   <h3 className="subtitle first">Résidence principale</h3>
-                  {homeProps.map((p) => <PropCard key={p.bien} p={p} />)}
+                  {homeProps.map((p) => renderProp(p))}
                 </>
               ) : null}
               {invProps.length > 0 ? (
@@ -613,7 +613,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                       <span className={'ind ' + invSummary.tone.l}><Landmark size={18} strokeWidth={1.6} /><b>{invSummary.ltv !== null ? pctPlain(invSummary.ltv) : '—'}</b><small>de dette</small></span>
                     </div>
                   ) : null}
-                  {invProps.map((p) => <PropCard key={p.bien} p={p} />)}
+                  {invProps.map((p) => renderProp(p))}
                   <p className="muted small">Rendement net: loyers moins charges courantes (avant intérêts) sur la valeur estimée. Cash-flow: ce qui reste chaque mois après intérêts et travaux. Dette: hypothèque sur valeur estimée.</p>
                 </>
               ) : null}
