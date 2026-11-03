@@ -57,16 +57,27 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const [period, setPeriod] = useState('12');
   const [view, setView] = useState<'home' | 'all' | 'todo'>(full.length > 0 ? 'home' : 'todo');
   const [sel, setSel] = useState('');
-  const years = useMemo(() => [...new Set(full.filter((m) => m.spend > 0).map((m) => m.month.slice(0, 4)))].filter((y) => full.filter((m) => m.month.startsWith(y) && m.spend > 0).length >= 6).sort().reverse(), [full]);
-  const yearOk = period === '12' || years.includes(period);
-  const used = period === 'm' ? full.slice(-1) : period === '12' || !yearOk ? full.slice(-12) : full.filter((m) => m.month.startsWith(period));
-  const prevYear = period !== '12' && yearOk ? full.filter((m) => m.month.startsWith(String(Number(period) - 1))) : [];
-  const periodLabel = period === 'm' && last ? monthName(last.month) : period === '12' || !yearOk ? `${used.length} derniers mois` : `${used.length} mois de ${period}`;
+  const years = useMemo(() => [...new Set(full.filter((m) => m.spend > 0).map((m) => m.month.slice(0, 4)))].filter((y) => full.filter((m) => m.month.startsWith(y) && m.spend > 0).length >= 3).sort().reverse(), [full]);
+  const isMonth = /^\d{4}-\d{2}$/.test(period);
+  const yearOk = period === '12' || isMonth || years.includes(period);
+  const used = isMonth ? full.filter((m) => m.month === period) : period === '12' || !yearOk ? full.slice(-12) : full.filter((m) => m.month.startsWith(period));
+  // Comparaison à période égale: mêmes mois un an plus tôt, ou les 12 mois précédents. Jamais une année entière contre une année entamée.
+  const prevYear = (() => {
+    if (period === '12' || !yearOk) return full.length >= 24 ? full.slice(-24, -12) : [];
+    const y = String(Number(period.slice(0, 4)) - 1);
+    const months = new Set(used.map((m) => m.month.slice(5)));
+    const p = full.filter((m) => m.month.startsWith(y) && months.has(m.month.slice(5)));
+    return p.length === used.length ? p : [];
+  })();
+  const prevLabel = period === '12' || !yearOk ? 'aux 12 mois précédents' : `à la même période en ${Number(period.slice(0, 4)) - 1}`;
+  const curYear = last ? last.month.slice(0, 4) : '';
+  const yearName = (y: string) => (y === curYear && last && last.month.slice(5) !== '12' ? `${y} à ce jour` : y);
+  const periodLabel = isMonth ? monthName(period) : period === '12' || !yearOk ? `${used.length} derniers mois` : yearName(period);
   // Une dépense payée une année mais qui appartient à une autre (solde d'impôts) suit son année dans la vue par année.
   const adj = useMemo(() => {
     const byCat: Record<string, number> = {};
     let total = 0;
-    if (period !== '12' && yearOk) {
+    if (period !== '12' && !isMonth && yearOk) {
       for (const m of full) {
         const inUsed = m.month.startsWith(period);
         for (const mv of m.moved ?? []) {
@@ -91,21 +102,19 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const maxBar = Math.max(1, ...used.flatMap((m) => [m.income + m.exceptional, m.spend]));
   const sum = (f: (m: (typeof full)[number]) => number) => used.reduce((s, m) => s + f(m), 0);
 
-  // Tendance: trois derniers mois contre les trois précédents.
   const cats = useMemo(() => {
     const keys = [...new Set([...used.flatMap((m) => Object.keys(m.byCategory)), ...Object.keys(adj.byCat)])];
-    const mean = (ms: typeof used, k: string) => (ms.length ? ms.reduce((s, m) => s + (m.byCategory[k] ?? 0), 0) / ms.length : 0);
+    const mean = (ms: typeof used, k: string) => (ms.length ? ms.reduce((t, m) => t + (m.byCategory[k] ?? 0), 0) / ms.length : 0);
     return keys
       .map((k) => {
-        const recent = mean(used.slice(-3), k);
-        const before = mean(used.slice(-6, -3), k);
-        const prevAvg = prevYear.length >= 6 ? mean(prevYear, k) : null;
-        const trend = prevAvg !== null ? (prevAvg > 20 ? mean(used, k) / prevAvg - 1 : null) : used.length >= 6 && before > 20 ? recent / before - 1 : null;
-        return { key: k, avg: mean(used, k) + (used.length ? (adj.byCat[k] ?? 0) / used.length : 0), last: last?.byCategory[k] ?? 0, trend, prevAvg };
+        const avg = mean(used, k) + (used.length ? (adj.byCat[k] ?? 0) / used.length : 0);
+        const prevAvg = prevYear.length > 0 ? mean(prevYear, k) : null;
+        const trend = prevAvg !== null && prevAvg > 20 ? avg / prevAvg - 1 : null;
+        return { key: k, avg, total: avg * used.length, prevAvg, trend };
       })
       .filter((c) => c.avg > 0)
       .sort((p, q) => q.avg - p.avg);
-  }, [used, last, prevYear, adj]);
+  }, [used, prevYear, adj]);
 
   const immoRows = useMemo(() => {
     const t: Record<string, { loyers: number; charges: number }> = {};
@@ -118,35 +127,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     const rank = (k: string) => ((b.homes ?? []).includes(k) ? 0 : k === 'Non réparti' ? 2 : 1);
     return Object.entries(t).sort((p, q) => rank(p[0]) - rank(q[0]) || p[0].localeCompare(q[0]));
   }, [used, b.homes]);
-  // Dépenses par catégorie, par année ou par mois, pour voir d'un coup d'œil ce qu'une catégorie coûte sur l'année.
-  const [catView, setCatView] = useState<'liste' | 'annee' | 'mois'>('liste');
-  const catTable = useMemo(() => {
-    type Col = { key: string; label: string; sub: string; totals: Record<string, number>; n: number };
-    let cols: Col[] = [];
-    if (catView === 'mois') {
-      cols = used.map((m) => ({ key: m.month, label: new Date(`${m.month}-01T00:00:00`).toLocaleDateString('fr-CH', { month: 'short' }), sub: m.month.slice(0, 4), totals: m.byCategory, n: 1 }));
-    } else {
-      for (const y of [...new Set(full.map((m) => m.month.slice(0, 4)))].sort()) {
-        const mm = full.filter((m) => m.month.startsWith(y));
-        if (mm.length < 3) continue; // une année à peine entamée ne dit rien
-        const totals: Record<string, number> = {};
-        for (const m of mm) for (const [k, v] of Object.entries(m.byCategory)) totals[k] = (totals[k] ?? 0) + v;
-        // Un impôt payé une autre année suit son année.
-        for (const m of full) {
-          for (const mv of m.moved ?? []) {
-            const inYear = m.month.startsWith(y);
-            if (inYear && mv.year !== y) totals[mv.category] = (totals[mv.category] ?? 0) - mv.amount;
-            if (!inYear && mv.year === y) totals[mv.category] = (totals[mv.category] ?? 0) + mv.amount;
-          }
-        }
-        cols.push({ key: y, label: y, sub: mm.length < 12 ? `${mm.length} mois` : '', totals, n: mm.length });
-      }
-    }
-    const keys = [...new Set(cols.flatMap((c) => Object.keys(c.totals)))].filter((k) => cols.some((c) => (c.totals[k] ?? 0) > 0));
-    const lastCol = cols[cols.length - 1];
-    if (lastCol) keys.sort((p, q) => (lastCol.totals[q] ?? 0) - (lastCol.totals[p] ?? 0));
-    return { cols, keys };
-  }, [catView, used, full]);
+  const [catView, setCatView] = useState<'moy' | 'total'>('moy');
   const worksByBien = useMemo(() => {
     const t: Record<string, number> = {};
     for (const m of used) for (const [k, v] of Object.entries(m.works ?? {})) t[k] = (t[k] ?? 0) + v;
@@ -258,23 +239,27 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const topCats = cats.slice(0, 5);
   const periodSelect = (
     <select className="periodsel" value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Période">
-      <option value="m">{last ? monthName(last.month) : 'Mois'}</option>
       <option value="12">12 derniers mois</option>
-      {years.map((y) => <option key={y} value={y}>{y}</option>)}
+      {years.map((y) => <option key={y} value={y}>{yearName(y)}</option>)}
+      <optgroup label="Mois">
+        {full.slice(-12).reverse().map((m) => <option key={m.month} value={m.month}>{monthName(m.month)}</option>)}
+      </optgroup>
     </select>
   );
+  const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k)])];
+  const maxCat = Math.max(1, ...cats.map((c) => (catView === 'total' ? c.total : c.avg)));
 
   return (
     <div className="page wide budget">
       <div className="topbar">
         {view === 'home' && last ? periodSelect : <button className="iconbtn" onClick={() => setView('home')} aria-label="Retour"><ArrowLeft size={18} strokeWidth={1.6} /></button>}
-        {view === 'home' && last ? <button className="iconbtn" onClick={() => setView('todo')} aria-label="Documents et points à traiter" title="Documents et points à traiter"><FolderOpen size={18} strokeWidth={1.6} />{todo > 0 ? <i className="badge">{todo}</i> : null}</button> : <span className="muted small">{view === 'all' ? periodLabel : 'Documents'}</span>}
+        {view === 'home' && last ? <button className="iconbtn" onClick={() => setView('todo')} aria-label="Documents et points à traiter" title="Documents et points à traiter"><FolderOpen size={18} strokeWidth={1.6} />{todo > 0 ? <i className="badge">{todo}</i> : null}</button> : <span className="muted small">{view === 'all' ? '' : 'Documents'}</span>}
       </div>
 
       {view === 'home' && last ? (
         <>
           <section className="hero">
-            <p className="unit">Reste {period === 'm' ? '' : 'par mois'}</p>
+            <p className="unit">Reste{used.length > 1 ? ' par mois' : ''}</p>
             <p className={'big xl' + (reste < 0 ? ' neg' : '')}>{money(reste)}</p>
           </section>
           <ul className="toplist">
@@ -288,98 +273,58 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
 
       {view === 'all' && last ? (
         <>
-          <div className="periods" role="tablist" aria-label="Affichage des catégories">
-            <button className={'btn' + (catView === 'liste' ? ' primary' : '')} onClick={() => setCatView('liste')}>Par mois en moyenne</button>
-            <button className={'btn' + (catView === 'annee' ? ' primary' : '')} onClick={() => setCatView('annee')}>Par année</button>
-            <button className={'btn' + (catView === 'mois' ? ' primary' : '')} onClick={() => setCatView('mois')}>Mois par mois</button>
+          <div className="allhead">
+            <span className="muted small">{periodLabel}</span>
+            {used.length > 1 ? (
+              <div className="seg" role="tablist" aria-label="Affichage">
+                <button className={catView === 'moy' ? 'on' : ''} onClick={() => setCatView('moy')}>Par mois</button>
+                <button className={catView === 'total' ? 'on' : ''} onClick={() => setCatView('total')}>Total</button>
+              </div>
+            ) : null}
           </div>
-          {catView === 'liste' ? (
-            <>
-            <ul className="cats">
-              {cats.map((c) => (
+          <ul className="catlist">
+            {cats.map((c) => {
+              const v = catView === 'total' ? c.total : c.avg;
+              return (
                 <li key={c.key}>
-                  <span className="name">{LABEL[c.key] ?? c.key}</span>
-                  <span className="share"><i style={{ width: `${avgSpend > 0 ? Math.min(100, (c.avg / avgSpend) * 100) : 0}%` }} /></span>
-                  <span className="amt">{money(c.avg)}{c.prevAvg !== null && prevYear.length >= 6 ? <span className="muted small"> ({Number(period) - 1}: {money(c.prevAvg)})</span> : null}</span>
-                  <span className={'trend' + (c.trend !== null && c.trend > 0.15 ? ' up' : c.trend !== null && c.trend < -0.15 ? ' down' : '')}>
-                    {c.trend === null ? '' : c.trend > 0.15 ? <><ArrowUpRight size={14} strokeWidth={1.8} />{Math.round(c.trend * 100)} %</> : c.trend < -0.15 ? <><ArrowDownRight size={14} strokeWidth={1.8} />{Math.round(c.trend * 100)} %</> : 'stable'}
-                  </span>
+                  <span className="n">{LABEL[c.key] ?? c.key}</span>
+                  <span className="trend2">{c.trend !== null && Math.abs(c.trend) > 0.15 ? <span className={c.trend > 0 ? 'up' : 'down'}>{c.trend > 0 ? '+' : ''}{Math.round(c.trend * 100)} %</span> : null}</span>
+                  <span className="v">{money(v)}</span>
+                  <span className="b"><i style={{ width: `${(v / maxCat) * 100}%` }} /></span>
                 </li>
-              ))}
-            </ul>
-              <p className="muted small">Moyenne par mois. La tendance compare les trois derniers mois aux trois précédents.</p>
-            </>
-          ) : catTable.cols.length > 0 && catTable.keys.length > 0 ? (
+              );
+            })}
+          </ul>
+          {prevYear.length > 0 ? <p className="muted small">Variation par rapport {prevLabel}, affichée au-dessus de 15 %.</p> : null}
+          {bienNames.length > 0 ? (
             <>
-              <div className="periods" role="tablist" aria-label="Affichage des catégories">
-                <button className={'btn' + (catView === 'annee' ? ' primary' : '')} onClick={() => setCatView('annee')}>Par année</button>
-                <button className={'btn' + (catView === 'mois' ? ' primary' : '')} onClick={() => setCatView('mois')}>Par mois</button>
+              <h3 className="subtitle">Immobilier</h3>
+              <div className="biens">
+                {bienNames.map((bien) => {
+                  const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
+                  const home = (b.homes ?? []).includes(bien);
+                  const works = Object.fromEntries(worksByBien)[bien] ?? 0;
+                  return (
+                    <div className="bien" key={bien}>
+                      <div className="bn">{bien}</div>
+                      <div className="bf">
+                        {home ? (
+                          <div><span>Charges</span><b>{money(v.charges)}</b></div>
+                        ) : (
+                          <>
+                            <div><span>Loyers</span><b>{money(v.loyers)}</b></div>
+                            <div><span>Charges</span><b>{money(v.charges)}</b></div>
+                            <div><span>Net</span><b>{money(v.loyers - v.charges)}</b></div>
+                          </>
+                        )}
+                        {works > 0 ? <div><span>dont travaux</span><b>{money(works)}</b></div> : null}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="cattable-wrap">
-                <table className="cattable">
-                  <thead>
-                    <tr>
-                      <th>Catégorie</th>
-                      {catTable.cols.map((c) => <th key={c.key}>{c.label}{c.sub ? <span className="muted small"> {c.sub}</span> : null}</th>)}
-                      {catView === 'annee' && catTable.cols.length >= 2 ? <th>Évolution</th> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {catTable.keys.map((k) => {
-                      const a = catTable.cols[catTable.cols.length - 2];
-                      const z = catTable.cols[catTable.cols.length - 1];
-                      const evo = catView === 'annee' && a && z && a.n >= 6 && z.n >= 6 && (a.totals[k] ?? 0) / a.n > 20 ? (z.totals[k] ?? 0) / z.n / ((a.totals[k] ?? 0) / a.n) - 1 : null;
-                      return (
-                        <tr key={k}>
-                          <th scope="row">{LABEL[k] ?? k}</th>
-                          {catTable.cols.map((c) => <td key={c.key}>{c.totals[k] ? money(c.totals[k]) : '·'}</td>)}
-                          {catView === 'annee' && catTable.cols.length >= 2 ? <td className={'trend' + (evo !== null && evo > 0.15 ? ' up' : evo !== null && evo < -0.15 ? ' down' : '')}>{evo === null ? '' : `${evo > 0 ? '+' : ''}${Math.round(evo * 100)} %`}</td> : null}
-                        </tr>
-                      );
-                    })}
-                    <tr className="total">
-                      <th scope="row">Total</th>
-                      {catTable.cols.map((c) => <td key={c.key}>{money(Object.entries(c.totals).reduce((s, [k, v]) => s + (catTable.keys.includes(k) ? v : 0), 0))}</td>)}
-                      {catView === 'annee' && catTable.cols.length >= 2 ? <td /> : null}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p className="muted small">{catView === 'annee' ? 'Total payé dans l’année, impôts rattachés à leur année. L’évolution compare la moyenne mensuelle des deux dernières années.' : `Dépenses de chaque mois sur ${periodLabel}.`}</p>
-
             </>
           ) : null}
-          <p className="muted small">Revenus {money(avgIncome)} par mois, dépenses {money(avgSpend)}, dont {money(avgOneOff)} de travaux et montants uniques. Versements uniques non comptés: {money(sum((m) => m.exceptional))}.</p>
-          {immoRows.length > 0 ? (
-            <h3 className="subtitle">Immobilier</h3>
-<h3 className="subtitle">Travaux par bien</h3>
-<div className="inner">
-              <ul className="cats">
-                <li><span className="name muted small">Bien</span><span className="amt muted small">Loyers · charges · net</span></li>
-                {immoRows.map(([bien, v]) => (
-                  <li key={bien}>
-                    <span className="name">{(b.homes ?? []).includes(bien) && !/domicile/i.test(bien) ? `${bien} (domicile)` : bien}</span>
-                    <span className="amt">{(b.homes ?? []).includes(bien) ? `${money(v.charges)} de charges` : `${money(v.loyers)} · ${money(v.charges)} · ${money(v.loyers - v.charges)}`}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="muted small">Sur {periodLabel}. Les loyers sont nets de charges PPE et de gérance. Charges: intérêts hypothécaires, charges PPE, décomptes et travaux.</p>
-            </div>
-          ) : null}
-          {worksByBien.length > 0 ? (
-            <div className="inner">
-              <ul className="cats">
-                {worksByBien.map(([bien, total]) => (
-                  <li key={bien}>
-                    <span className="name">{bien}</span>
-                    <span className="amt">{money(total)}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="muted small">Total sur {periodLabel}. Les charges PPE et les intérêts restent dans Immobilier.</p>
-            </div>
-          ) : null}
-
         </>
       ) : null}
 

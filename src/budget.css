@@ -100,3 +100,19 @@
 .toplist li:first-child { border-top: none; }
 .morelink { display: block; margin: 12px auto 0; border: none; background: none; color: var(--accent); font: inherit; font-size: 14px; cursor: pointer; }
 .subtitle { font-size: 15px; font-weight: 500; margin: 28px 0 6px; }
+
+.allhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.catlist { list-style: none; margin: 0; padding: 0; }
+.catlist li { display: grid; grid-template-columns: 1fr auto auto; column-gap: 14px; align-items: baseline; padding: 10px 0 8px; border-top: 1px solid var(--line, rgba(0,0,0,.08)); font-size: 15px; }
+.catlist li:first-child { border-top: none; }
+.catlist .v { font-variant-numeric: tabular-nums; text-align: right; min-width: 110px; }
+.catlist .trend2 { font-size: 12px; }
+.catlist .up { color: #c4452d; } .catlist .down { color: #2f7d4f; }
+.catlist .b { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: rgba(0,0,0,.05); margin-top: 6px; }
+.catlist .b i { display: block; height: 100%; border-radius: 2px; background: #534AB7; opacity: .75; }
+.biens { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 10px; }
+.bien { border: 1px solid var(--line, rgba(0,0,0,.1)); border-radius: 12px; padding: 14px 16px; }
+.bien .bn { font-weight: 500; margin-bottom: 8px; }
+.bien .bf { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.bien .bf div { display: flex; flex-direction: column; font-size: 13px; color: var(--ink-2); }
+.bien .bf b { font-weight: 500; font-size: 15px; color: var(--ink); }
