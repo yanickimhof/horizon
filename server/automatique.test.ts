@@ -283,3 +283,19 @@ describe('assurance maladie: prime et participations aux soins', () => {
     expect(v.merchants.some((m) => /participations aux soins/.test(m.label))).toBe(true);
   });
 });
+
+describe('versement éclaté', () => {
+  it('compte le dernier salaire dans les gains et met le reste hors habituel', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    for (let i = 1; i <= 9; i++) rows.push([`2025-0${i}-25`, 'EMPLOYEUR EXEMPLE SARL, Lausanne Salaire', 9000]);
+    rows.push(['2025-11-25', 'EMPLOYEUR EXEMPLE SARL, Lausanne Solde de tout compte', 100000]);
+    storeStatements(l, [stmt('Compte', rows)], 'c.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'revenu' WHERE date < '2025-11-01'; UPDATE budget_txs SET category = 'exceptionnel' WHERE date >= '2025-11-01'");
+    l.setSetting('budget.eclats', JSON.stringify([{ re: 'solde de tout compte', date: '2025-11-25', parts: [{ label: 'Salaire de novembre', amount: 9000 }, { label: 'Plan social et bonus', once: true }] }]));
+    const v = recurringView(l, new Date('2026-02-15'), '2025');
+    expect(Math.round(v.income)).toBe(90000);
+    expect(Math.round(v.incomeOnce)).toBe(91000);
+    expect(v.incomeBy.map((x) => x.label)).toContain('Salaire de novembre');
+  });
+});

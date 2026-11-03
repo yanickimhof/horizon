@@ -181,7 +181,6 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       const hit = aliasOf(r.label);
       return hit?.category ? { ...r, category: hit.category } : r;
     });
-  const income = rows.filter((r) => r.category === 'revenu' && r.amount > 0 && inSel(r.date.slice(0, 7))).reduce((t, r) => t + toChf(r.amount, r.currency), 0);
 
   // Un fournisseur est ce qu'on dirait à voix haute: « Migros », « CSS », « Intérêts hypothécaires, Osiris ».
   const hh = l.current().find((x) => x.key === 'household');
@@ -308,20 +307,51 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   }
   // Les gains par source, et la même période un an plus tôt.
   const incLabel = (r: Row): string => aliasOf(r.label)?.name ?? (r.bien || /loyer|g[ée]rance|r[ée]gie|immobili|myhome|iloc|mietzins/i.test(r.label) ? 'Loyers' : /ch[oô]mage|arbeitslosen/i.test(r.label) ? 'Chômage' : supplierOf(r.label, { selfNames, bien: r.bien }).name);
-  const incomeRows = rows.filter((r) => r.category === 'revenu' && r.amount > 0);
-  const incMap = new Map<string, { amount: number; prior: number }>();
-  for (const r of incomeRows) {
+  // Un versement peut regrouper plusieurs choses (dernier salaire, bonus, plan social): réglage « budget.eclats », liste de { re, date?, parts: [{ label, amount?, once? }] }.
+  // La dernière part reçoit le reste; « once » veut dire hors habituel (non compté dans les gains courants).
+  const splits = (() => {
+    try {
+      return JSON.parse(l.getSetting('budget.eclats') || '[]') as { re: string; date?: string; parts: { label: string; amount?: number; once?: boolean }[] }[];
+    } catch {
+      return [];
+    }
+  })();
+  type Ev = { month: string; label: string; amount: number; once: boolean };
+  const events: Ev[] = [];
+  for (const r of rows) {
+    if (r.amount <= 0 || (r.category !== 'revenu' && r.category !== 'exceptionnel')) continue;
     const m = r.date.slice(0, 7);
     const chf = toChf(r.amount, r.currency);
-    const k = incLabel(r);
-    const e = incMap.get(k) ?? { amount: 0, prior: 0 };
-    if (inSel(m)) e.amount += chf;
-    if (inPairPrior(m)) e.prior += chf * scale;
-    incMap.set(k, e);
+    const rule = splits.find((x) => new RegExp(x.re, 'i').test(r.label) && (!x.date || x.date === r.date));
+    if (rule && rule.parts.length > 0) {
+      let left = chf;
+      rule.parts.forEach((part, i) => {
+        const v = i === rule.parts.length - 1 ? left : Math.min(left, part.amount ?? left);
+        left -= v;
+        events.push({ month: m, label: part.label, amount: v, once: !!part.once });
+      });
+    } else {
+      events.push({ month: m, label: incLabel(r), amount: chf, once: r.category === 'exceptionnel' });
+    }
+  }
+  const incMap = new Map<string, { amount: number; prior: number }>();
+  let income = 0;
+  let incomeOnce = 0;
+  for (const e of events) {
+    if (e.once) {
+      if (inSel(e.month)) incomeOnce += e.amount;
+      continue;
+    }
+    const k = incMap.get(e.label) ?? { amount: 0, prior: 0 };
+    if (inSel(e.month)) {
+      k.amount += e.amount;
+      income += e.amount;
+    }
+    if (inPairPrior(e.month)) k.prior += e.amount * scale;
+    incMap.set(e.label, k);
   }
   const incList = [...incMap.entries()].filter(([, v]) => v.amount > 0 || v.prior > 0).map(([label, v]) => ({ label, amount: v.amount, prior: priorCovered ? v.prior : null })).sort((a, b) => b.amount - a.amount);
   const incomeBy = incList.length > 4 ? [...incList.slice(0, 4), { label: 'Autres', amount: incList.slice(4).reduce((t, x) => t + x.amount, 0), prior: priorCovered ? incList.slice(4).reduce((t, x) => t + (x.prior ?? 0), 0) : null }] : incList;
-  const incomeOnce = rows.filter((r) => r.category === 'exceptionnel' && r.amount > 0 && inSel(r.date.slice(0, 7))).reduce((t, r) => t + toChf(r.amount, r.currency), 0);
   const compare = {
     income: priorCovered ? incList.reduce((t, x) => t + (x.prior ?? 0), 0) : null,
     spend: priorCovered ? spend.filter((r) => inPairPrior(r.date.slice(0, 7))).reduce((t, r) => t - toChf(r.amount, r.currency), 0) * scale : null,

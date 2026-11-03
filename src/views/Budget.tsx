@@ -485,6 +485,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     const groups = grouped ? Object.entries(items.reduce<Record<string, Item[]>>((t, x) => ({ ...t, [x.cat]: [...(t[x.cat] ?? []), x] }), {})).map(([cat, list]) => ({ cat, name: LABEL[cat] ?? cat, amount: list.reduce((t, x) => t + x.amount, 0), list: [...list].sort(sorter) })).sort(sorter) : [];
     return (
       <>
+        <p className="unitcap">Montants cumulés sur {periodLabel}</p>
         <div className="listtools">
           <div className="seg" role="group" aria-label="Tri">
             <button className={sortBy === 'montant' ? 'on' : ''} onClick={() => setSortBy('montant')}>Montant</button>
@@ -534,8 +535,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             ))}
           </div>
 
-          {tab === 'revient' ? renderList('revient', rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))) : null}
-          {tab === 'quotidien' ? renderList('quotidien', rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, plural(x.count, 'paiement')], lines: x.lines }))) : null}
+          {tab === 'revient' ? renderList('revient', rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, `environ ${money(x.perMonth)} par mois`, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))) : null}
+          {tab === 'quotidien' ? renderList('quotidien', rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, `environ ${money(x.total / monthsN)} par mois`, plural(x.count, 'paiement')], lines: x.lines }))) : null}
           {tab === 'exceptionnel' ? renderList('exceptionnel', rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))) : null}
 
           {tab === 'synthese' ? (
