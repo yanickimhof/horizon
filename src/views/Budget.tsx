@@ -570,14 +570,14 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   </ul>
                 </div>
               </div>
-              {rec.changes.length > 0 ? (
+              {rec.avoidable.length > 0 ? (
                 <>
-                  <h3 className="subtitle">Tarifs qui ont changé</h3>
+                  <h3 className="subtitle">À questionner</h3>
                   <ul className="rows">
-                    {rec.changes.slice(0, 5).map((x) => (
+                    {rec.avoidable.slice(0, 6).map((x) => (
                       <li key={x.key + x.kind} className="plain">
-                        <span className="n">{x.label}<small>{x.kind === 'prix' ? `${money(x.from ?? 0)} → ${money(x.to ?? 0)} par paiement (${x.cadence}) depuis ${monthFr(x.since)}` : x.kind === 'nouveau' ? `Nouveau depuis ${monthFr(x.since)}: ${money(x.to ?? 0)} (${x.cadence})` : `Arrêté après ${monthFr(x.since)}: ${money(x.from ?? 0)} (${x.cadence})`}</small></span>
-                        <span className={'delta ' + (x.yearly > 0 ? 'up' : 'down')}>{x.yearly > 0 ? '+' : ''}{money(x.yearly)} par an</span>
+                        <span className="n">{x.label}<small>{x.kind === 'abonnement' ? `Abonnement, ${plural(x.count, 'paiement')}` : x.kind === 'frais' ? `Frais, ${plural(x.count, 'paiement')}` : `${plural(x.count, 'achat')} au même endroit, environ ${money(x.perMonth)} par mois`}</small></span>
+                        <span className="v">{money(x.perYear)}</span>
                       </li>
                     ))}
                   </ul>

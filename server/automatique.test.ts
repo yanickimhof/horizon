@@ -225,20 +225,20 @@ describe('corrections par fournisseur et changements de tarif', () => {
     expect(v.recurring.find((r) => r.label === 'Argent de poche')?.category).toBe('enfants');
   });
 
-  it('une prime qui augmente est un changement de tarif, pas un total qui bouge', () => {
+  it('signale les abonnements et les achats répétés au même endroit, pas les dépenses indispensables', () => {
     const l = new Ledger(':memory:');
     const rows: [string, string, number][] = [];
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= 9; i++) {
       const m = String(i).padStart(2, '0');
-      rows.push([`2026-${m}-05`, 'Prime Assurance Exemple SA', i <= 5 ? -400 : -440]);
+      rows.push([`2026-${m}-05`, 'Netflix International', -20], [`2026-${m}-11`, 'Cafe Exemple Lausanne', -35], [`2026-${m}-12`, 'Cafe Exemple Lausanne', -28], [`2026-${m}-14`, 'Coop Exemple Echallens', -150]);
     }
-    storeStatements(l, [stmt('Compte', rows)], 'p.csv');
-    l.raw.exec("UPDATE budget_txs SET category = 'assurances'");
+    storeStatements(l, [stmt('Compte', rows)], 'a.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'abonnements' WHERE label LIKE 'Netflix%'; UPDATE budget_txs SET category = 'restaurants' WHERE label LIKE 'Cafe%'; UPDATE budget_txs SET category = 'alimentation' WHERE label LIKE 'Coop%'");
     const v = recurringView(l, new Date('2026-10-15'));
-    const c = v.changes.find((x) => x.kind === 'prix');
-    expect(c?.from).toBe(400);
-    expect(c?.to).toBe(440);
-    expect(c?.yearly).toBe(480);
+    const kinds = Object.fromEntries(v.avoidable.map((x) => [x.label, x.kind]));
+    expect(Object.values(kinds)).toContain('abonnement');
+    expect(Object.values(kinds)).toContain('habitude');
+    expect(v.avoidable.some((x) => x.category === 'alimentation')).toBe(false);
   });
 });
 
