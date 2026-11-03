@@ -264,6 +264,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const monthsN = Math.max(rec.months.length, 1);
   const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k), ...rec.works.map((w) => w.bien ?? 'À rattacher')])];
   const monthShort = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('fr-CH', { month: 'short' }).replace('.', '');
+  const monthFr = (m: string) => `${monthShort(m)} ${m.slice(0, 4)}`;
   const rangeLabel = (pm: string[]) => {
     if (pm.length === 0) return '';
     const a = pm[0];
@@ -285,27 +286,29 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const pct = (t: number | null) => (t === null ? '' : `${t > 0 ? '+' : ''}${Math.round(t * 100)} %`);
   const Trend = ({ t, d }: { t: number | null; d: number | null }) => (t !== null && d !== null && Math.abs(t) >= 0.1 && Math.abs(d) >= 100 ? <span className={'chip ' + (t > 0 ? 'up' : 'down')} title={`Par rapport aux mêmes mois un an plus tôt (${rec.comparedMonths} mois)`}>{pct(t)}</span> : null);
   const cut = (n: number) => (more ? n : 8);
-  const moving = [...rec.recurring, ...rec.merchants.map((m) => ({ ...m, perYear: m.total }))]
-    .filter((x) => x.trend !== null && x.delta !== null && Math.abs(x.trend) >= 0.1 && Math.abs(x.delta) >= 150)
-    .sort((p, q) => Math.abs((q.delta ?? 0)) - Math.abs((p.delta ?? 0)))
-    .slice(0, 10);
   const levers = rec.recurring.filter((x) => x.lever).slice(0, 6);
   const dateFr = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('fr-CH', { day: '2-digit', month: '2-digit', year: '2-digit' });
   const [fix, setFix] = useState<{ id: string; name: string; category: string } | null>(null);
   const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const tooGeneral = (t: string) => t.length < 4 || /^(paiement|d[ée]bit|cr[ée]dit|transfert|virement|ordre|retrait|achat|e-banking)\b/i.test(t);
-  const saveFix = async (seed: string) => {
-    if (!fix || !fix.name.trim()) return;
+  const [fixErr, setFixErr] = useState('');
+  const saveFix = async (it: { bases: string[] }) => {
+    if (!fix || !fix.name.trim()) {
+      setFixErr('Donne un nom au fournisseur.');
+      return;
+    }
+    setFixErr('');
     try {
-      setState(await api.post(db, 'budget/fournisseurs', { rules: [...state.fournisseurs.filter((r) => r.re !== escapeRe(seed)), { re: escapeRe(seed), name: fix.name.trim(), ...(fix.category ? { category: fix.category } : {}) }] }));
+      const rules = [...state.fournisseurs.filter((r) => !(r.key && it.bases.includes(r.key))), ...it.bases.map((k) => ({ key: k, name: fix.name.trim(), ...(fix.category ? { category: fix.category } : {}) }))];
+      setState(await api.post(db, 'budget/fournisseurs', { rules }));
       setFix(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setFixErr(e instanceof Error ? e.message : String(e));
     }
   };
-  const removeFournisseur = async (re: string) => {
+  const removeFournisseur = async (id: string) => {
     try {
-      setState(await api.post(db, 'budget/fournisseurs', { rules: state.fournisseurs.filter((r) => r.re !== re) }));
+      setState(await api.post(db, 'budget/fournisseurs', { rules: state.fournisseurs.filter((r) => (r.re ?? r.key) !== id) }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -438,7 +441,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     const good = goodUp ? t > 0 : t < 0;
     return <p className={'cmpline ' + (good ? 'down' : 'up')}>{t > 0 ? '↑' : '↓'} {pct(t)} · {text}</p>;
   };
-  type Item = { id: string; name: string; amount: number; cat: string; prior?: number | null; trend?: number | null; delta?: number | null; facts: string[]; lines: { date: string; amount: number; account: string; text: string }[] };
+  type Item = { id: string; name: string; amount: number; cat: string; bases: string[]; prior?: number | null; trend?: number | null; delta?: number | null; facts: string[]; lines: { date: string; amount: number; account: string; text: string }[] };
   const [sortBy, setSortBy] = useState<'montant' | 'nom'>('montant');
   const [groupBy, setGroupBy] = useState<Record<string, boolean>>({ exceptionnel: true });
   const [openGroup, setOpenGroup] = useState('');
@@ -454,23 +457,22 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         {open === it.id ? (
           <div className="detail">
             <p className="facts">{it.facts.filter(Boolean).join(' · ')}</p>
-            {(() => {
-              const seed = (it.lines[0]?.text ?? '').split(',')[0].trim();
-              if (!seed || tooGeneral(seed)) return null;
-              return fix?.id === it.id ? (
+            {it.bases.length > 0 ? (
+              fix?.id === it.id ? (
                 <div className="fixform">
                   <input value={fix.name} onChange={(e) => setFix({ ...fix, name: e.target.value })} aria-label="Nom" placeholder="Nom du fournisseur" />
                   <select value={fix.category} onChange={(e) => setFix({ ...fix, category: e.target.value })} aria-label="Catégorie">
                     <option value="">Garder la catégorie</option>
                     {CATS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
-                  <button className="btn" onClick={() => saveFix(seed)}>Enregistrer</button>
-                  <button className="btn small" onClick={() => setFix(null)}>Annuler</button>
+                  <button className="btn" onClick={() => saveFix(it)}>Enregistrer</button>
+                  <button className="btn small" onClick={() => { setFix(null); setFixErr(''); }}>Annuler</button>
+                  {fixErr ? <p className="muted small" role="alert">{fixErr}</p> : null}
                 </div>
               ) : (
-                <button className="link" onClick={() => setFix({ id: it.id, name: it.name, category: '' })}>Corriger le nom ou la catégorie</button>
-              );
-            })()}
+                <button className="link" onClick={() => { setFixErr(''); setFix({ id: it.id, name: it.name, category: '' }); }}>Corriger le nom ou la catégorie</button>
+              )
+            ) : null}
             <ul>
               {it.lines.map((ln, i) => <li key={i}><span>{dateFr(ln.date)}</span><span className="t">{ln.text}</span><b>{money(ln.amount)}</b></li>)}
             </ul>
@@ -537,9 +539,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             ))}
           </div>
 
-          {tab === 'revient' ? renderList('revient', rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, `environ ${money(x.perMonth)} par mois`, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))) : null}
-          {tab === 'quotidien' ? renderList('quotidien', rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, `environ ${money(x.total / monthsN)} par mois`, plural(x.count, 'paiement')], lines: x.lines }))) : null}
-          {tab === 'exceptionnel' ? renderList('exceptionnel', rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))) : null}
+          {tab === 'revient' ? renderList('revient', rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, bases: x.bases, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, `environ ${money(x.perMonth)} par mois`, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))) : null}
+          {tab === 'quotidien' ? renderList('quotidien', rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, bases: x.bases, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, `environ ${money(x.total / monthsN)} par mois`, plural(x.count, 'paiement')], lines: x.lines }))) : null}
+          {tab === 'exceptionnel' ? renderList('exceptionnel', rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, bases: x.bases, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))) : null}
 
           {tab === 'synthese' ? (
             <section>
@@ -566,20 +568,14 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   </ul>
                 </div>
               </div>
-              {moving.length > 0 || rec.categories.length > 0 ? (
+              {rec.changes.length > 0 ? (
                 <>
-                  <h3 className="subtitle">Ce qui a changé</h3>
+                  <h3 className="subtitle">Tarifs qui ont changé</h3>
                   <ul className="rows">
-                    {rec.categories.slice(0, 3).map((c) => (
-                      <li key={c.category} className="plain">
-                        <span className="n">{LABEL[c.category] ?? c.category}<small>{money(c.prior)} en {priorLabel} → {money(c.perYear)} en {nowLabel}</small></span>
-                        <span className={'delta ' + (c.delta > 0 ? 'up' : 'down')}>{c.delta > 0 ? '+' : ''}{money(c.delta)}</span>
-                      </li>
-                    ))}
-                    {moving.slice(0, 4).map((x) => (
-                      <li key={x.key} className="plain">
-                        <span className="n">{x.label}<small>{x.prior !== null && x.prior !== undefined ? `${money(x.prior)} en ${priorLabel} → ${money(x.now ?? x.perYear)} en ${nowLabel}` : ''}</small></span>
-                        <span className={'delta ' + ((x.delta ?? 0) > 0 ? 'up' : 'down')}>{(x.delta ?? 0) > 0 ? '+' : ''}{money(x.delta ?? 0)}</span>
+                    {rec.changes.slice(0, 5).map((x) => (
+                      <li key={x.key + x.kind} className="plain">
+                        <span className="n">{x.label}<small>{x.kind === 'prix' ? `${money(x.from ?? 0)} → ${money(x.to ?? 0)} par paiement (${x.cadence}) depuis ${monthFr(x.since)}` : x.kind === 'nouveau' ? `Nouveau depuis ${monthFr(x.since)}: ${money(x.to ?? 0)} (${x.cadence})` : `Arrêté après ${monthFr(x.since)}: ${money(x.from ?? 0)} (${x.cadence})`}</small></span>
+                        <span className={'delta ' + (x.yearly > 0 ? 'up' : 'down')}>{x.yearly > 0 ? '+' : ''}{money(x.yearly)} par an</span>
                       </li>
                     ))}
                   </ul>
@@ -731,9 +727,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         {state.fournisseurs.length > 0 ? (
           <ul className="changes">
             {state.fournisseurs.map((r) => (
-              <li key={r.re}>
-                <span className="name">{r.name}<span className="muted small"> · {r.re.replace(/\\(.)/g, '$1')}{r.category ? ` · ${LABEL[r.category] ?? r.category}` : ''}</span></span>
-                <button className="btn small" onClick={() => removeFournisseur(r.re)} aria-label={`Retirer ${r.name}`}>Retirer</button>
+              <li key={r.re ?? r.key}>
+                <span className="name">{r.name}<span className="muted small"> · {(r.re ?? r.key ?? '').replace(/\\(.)/g, '$1')}{r.category ? ` · ${LABEL[r.category] ?? r.category}` : ''}</span></span>
+                <button className="btn small" onClick={() => removeFournisseur((r.re ?? r.key) as string)} aria-label={`Retirer ${r.name}`}>Retirer</button>
               </li>
             ))}
           </ul>

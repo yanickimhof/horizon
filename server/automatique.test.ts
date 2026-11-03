@@ -206,6 +206,42 @@ describe('noms de fournisseurs choisis', () => {
   });
 });
 
+describe('corrections par fournisseur et changements de tarif', () => {
+  it('une règle par clé de fournisseur regroupe et recatégorise toutes les variantes', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    for (let i = 1; i <= 8; i++) {
+      const m = String(i).padStart(2, '0');
+      rows.push([`2026-${m}-02`, 'Transfert Léa Exemple', -90]);
+    }
+    storeStatements(l, [stmt('Compte', rows)], 'c.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'famille'");
+    const first = recurringView(l, new Date('2026-10-15'));
+    const bases = first.recurring[0].bases;
+    expect(bases.length).toBeGreaterThan(0);
+    l.setSetting('budget.fournisseurs', JSON.stringify(bases.map((key) => ({ key, name: 'Argent de poche', category: 'enfants' }))));
+    const v = recurringView(l, new Date('2026-10-15'));
+    expect(v.recurring.map((r) => r.label)).toContain('Argent de poche');
+    expect(v.recurring.find((r) => r.label === 'Argent de poche')?.category).toBe('enfants');
+  });
+
+  it('une prime qui augmente est un changement de tarif, pas un total qui bouge', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    for (let i = 1; i <= 10; i++) {
+      const m = String(i).padStart(2, '0');
+      rows.push([`2026-${m}-05`, 'Prime Assurance Exemple SA', i <= 5 ? -400 : -440]);
+    }
+    storeStatements(l, [stmt('Compte', rows)], 'p.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'assurances'");
+    const v = recurringView(l, new Date('2026-10-15'));
+    const c = v.changes.find((x) => x.kind === 'prix');
+    expect(c?.from).toBe(400);
+    expect(c?.to).toBe(440);
+    expect(c?.yearly).toBe(480);
+  });
+});
+
 describe('décompte annuel de copropriété', () => {
   const doc = "Gérance SA Décompte de copropriété du 01.04.2025 au 31.03.2026 présente un solde en votre faveur de Fr. -555.25. Ce montant sera viré. PPE Les Cèdres 7A - Charges fiscales - Exercice du 01.04.2025 au 31.03.2026 Nous détaillons les frais déductibles fiscalement relatifs à votre part de copropriété. Recettes de buanderie -46.55 Conciergerie 731.60 Electricité 214.00 Honoraires d'administration 871.85 Frais parcelle 2104 - strate 3 647.45 Assurances 467.90 TOTAL 2886.25 Nous demeurons à votre disposition.";
   it('lit les rubriques et le total', () => {

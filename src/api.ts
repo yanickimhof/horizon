@@ -32,7 +32,7 @@ export interface State {
   budget: BudgetView;
   recurring: RecurringView;
   decomptes: Decompte[];
-  fournisseurs: { re: string; name: string; category?: string }[];
+  fournisseurs: { re?: string; key?: string; name: string; category?: string }[];
   docs: { chunks: number; sources: number };
   empty: boolean;
   snapshot: Snapshot;
@@ -189,11 +189,12 @@ export const fmt = {
 
 export const RING_LABELS = ['3 mois', '1 an', '5 ans', '20 ans'];
 
-export interface RecurringItem { key: string; label: string; category: string; bien: string | null; cadence: 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel' | 'régulier'; perYear: number; perMonth: number; count: number; last: string; trend: number | null; delta: number | null; prior: number | null; now: number | null; lever: boolean; lines: Line[] }
-export interface Merchant { key: string; label: string; category: string; total: number; count: number; trend: number | null; delta: number | null; prior: number | null; now: number | null; lines: Line[] }
+export interface RecurringItem { key: string; label: string; category: string; bien: string | null; cadence: 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel' | 'régulier'; perYear: number; perMonth: number; count: number; last: string; trend: number | null; delta: number | null; prior: number | null; now: number | null; lever: boolean; lines: Line[]; bases: string[] }
+export interface Merchant { key: string; label: string; category: string; total: number; count: number; trend: number | null; delta: number | null; prior: number | null; now: number | null; lines: Line[]; bases: string[] }
 export interface Line { date: string; amount: number; account: string; text: string }
-export interface OneOff { label: string; date: string; amount: number; category: string; bien: string | null; text: string }
+export interface OneOff { label: string; date: string; amount: number; category: string; bien: string | null; text: string; bases: string[] }
 export interface CategoryMove { category: string; perYear: number; trend: number; delta: number; prior: number }
-export interface RecurringView { categories: CategoryMove[]; works: OneOff[]; months: string[]; comparedMonths: number; priorMonths: string[]; income: number; incomeBy: { label: string; amount: number; prior: number | null }[]; incomeOnce: number; compare: { income: number | null; spend: number | null; incomeNow: number | null; spendNow: number | null }; pairMonths: string[]; recurring: RecurringItem[]; merchants: Merchant[]; oneOffs: OneOff[]; totals: { recurring: number; daily: number; exceptional: number; works: number } }
+export interface Change { key: string; label: string; kind: 'prix' | 'nouveau' | 'arret'; from: number | null; to: number | null; cadence: string; since: string; yearly: number }
+export interface RecurringView { changes: Change[]; categories: CategoryMove[]; works: OneOff[]; months: string[]; comparedMonths: number; priorMonths: string[]; income: number; incomeBy: { label: string; amount: number; prior: number | null }[]; incomeOnce: number; compare: { income: number | null; spend: number | null; incomeNow: number | null; spendNow: number | null }; pairMonths: string[]; recurring: RecurringItem[]; merchants: Merchant[]; oneOffs: OneOff[]; totals: { recurring: number; daily: number; exceptional: number; works: number } }
 
 export interface Decompte { bien: string | null; from: string; to: string; total: number; lines: { label: string; amount: number }[]; solde: number | null; paid: number; settled: string | null }
