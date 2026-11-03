@@ -422,6 +422,12 @@ export async function apiMiddleware(req: IncomingMessage, res: ServerResponse, n
         setBiens(l, Array.isArray(body.rules) ? body.rules : []);
         break;
       }
+      case 'POST /api/budget/repartitions': {
+        const list = (Array.isArray(body.rules) ? body.rules : []) as { re?: string; date?: string; biens?: string[] }[];
+        for (const r of list) if (r.re) new RegExp(r.re, 'i');
+        l.setSetting('budget.repartitions', JSON.stringify(list.filter((r) => Array.isArray(r.biens) && r.biens.length > 0)));
+        break;
+      }
       case 'POST /api/budget/fournisseurs': {
         const rules = (Array.isArray(body.rules) ? body.rules : []) as { re: string; name: string; category?: string }[];
         for (const r of rules) if (r.category && !(r.category in CATEGORIES)) throw new Error('Catégorie invalide.');
