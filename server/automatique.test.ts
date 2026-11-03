@@ -242,6 +242,24 @@ describe('corrections par fournisseur et changements de tarif', () => {
   });
 });
 
+describe('un même fournisseur pour deux usages, séparés par le montant', () => {
+  it('sépare les petits montants du reste', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    for (let i = 1; i <= 8; i++) {
+      const m = String(i).padStart(2, '0');
+      rows.push([`2026-${m}-20`, 'Energie Exemple SA, Rue du Lac 1, Morges', -20], [`2026-${m}-21`, 'Energie Exemple SA, Rue du Lac 1, Morges', -110]);
+    }
+    storeStatements(l, [stmt('Compte', rows)], 'e.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'energie'");
+    l.setSetting('budget.fournisseurs', JSON.stringify([{ re: 'energie exemple', max: 45, name: 'Recharge petite voiture', category: 'vehicule' }, { re: 'energie exemple', min: 45, name: 'Recharge grande voiture', category: 'vehicule' }]));
+    const v = recurringView(l, new Date('2026-10-15'));
+    const labels = [...v.recurring.map((x) => x.label), ...v.merchants.map((x) => x.label)];
+    expect(labels).toContain('Recharge petite voiture');
+    expect(labels).toContain('Recharge grande voiture');
+  });
+});
+
 describe('décompte annuel de copropriété', () => {
   const doc = "Gérance SA Décompte de copropriété du 01.04.2025 au 31.03.2026 présente un solde en votre faveur de Fr. -555.25. Ce montant sera viré. PPE Les Cèdres 7A - Charges fiscales - Exercice du 01.04.2025 au 31.03.2026 Nous détaillons les frais déductibles fiscalement relatifs à votre part de copropriété. Recettes de buanderie -46.55 Conciergerie 731.60 Electricité 214.00 Honoraires d'administration 871.85 Frais parcelle 2104 - strate 3 647.45 Assurances 467.90 TOTAL 2886.25 Nous demeurons à votre disposition.";
   it('lit les rubriques et le total', () => {

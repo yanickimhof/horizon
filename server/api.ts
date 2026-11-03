@@ -429,7 +429,7 @@ export async function apiMiddleware(req: IncomingMessage, res: ServerResponse, n
         break;
       }
       case 'POST /api/budget/fournisseurs': {
-        const rules = (Array.isArray(body.rules) ? body.rules : []) as { re: string; name: string; category?: string }[];
+        const rules = (Array.isArray(body.rules) ? body.rules : []) as { re: string; name: string; category?: string; min?: number; max?: number }[];
         for (const r of rules) if (r.category && !(r.category in CATEGORIES)) throw new Error('Catégorie invalide.');
         setFournisseurs(l, rules);
         break;

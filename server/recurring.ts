@@ -203,7 +203,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   // Une règle « key » vise un fournisseur tel que l'outil le lit (toutes ses variantes), une règle « re » un libellé précis.
   const aliases = (() => {
     try {
-      return (JSON.parse(l.getSetting('budget.fournisseurs') || '[]') as { re?: string; key?: string; name: string; category?: string }[]).filter((x) => (x.re || x.key) && x.name);
+      return (JSON.parse(l.getSetting('budget.fournisseurs') || '[]') as { re?: string; key?: string; name: string; category?: string; min?: number; max?: number }[]).filter((x) => (x.re || x.key) && x.name);
     } catch {
       return [];
     }
@@ -212,7 +212,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   const baseName = (r: Row): string => (isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name);
   const baseKey = (r: Row): string => compact(baseName(r));
   // La règle la plus récente l'emporte: une correction faite aujourd'hui doit passer devant une ancienne règle plus large.
-  const aliasOf = (r: Row) => [...aliases].reverse().find((x) => (x.re && new RegExp(x.re, 'i').test(r.label)) || (x.key && x.key === baseKey(r)));
+  const aliasOf = (r: Row) => [...aliases].reverse().find((x) => ((x.re && new RegExp(x.re, 'i').test(r.label)) || (x.key && x.key === baseKey(r))) && (x.min === undefined || Math.abs(toChf(r.amount, r.currency)) >= x.min) && (x.max === undefined || Math.abs(toChf(r.amount, r.currency)) < x.max));
   const spend = rows
     // Les remboursements (assurance, impôts, achats retournés) sont gardés: ils viennent en déduction du même fournisseur.
     .filter((r) => !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))))
@@ -407,6 +407,9 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
 }
 
 export interface Fournisseur {
+  /** Montant minimal (inclus) et maximal (exclu) en francs: un même libellé peut couvrir deux usages (une borne de recharge, l'électricité). */
+  min?: number;
+  max?: number;
   re?: string;
   key?: string;
   name: string;
@@ -436,7 +439,7 @@ export function setFournisseurs(l: Ledger, rules: Fournisseur[]): void {
         throw new Error(`Motif invalide: ${re}`);
       }
     }
-    clean.push({ ...(re ? { re } : { key }), name, ...(r.category ? { category: String(r.category) } : {}) });
+    clean.push({ ...(re ? { re } : { key }), ...(Number.isFinite(r.min) ? { min: Number(r.min) } : {}), ...(Number.isFinite(r.max) ? { max: Number(r.max) } : {}), name, ...(r.category ? { category: String(r.category) } : {}) });
   }
   l.setSetting('budget.fournisseurs', JSON.stringify(clean));
 }
