@@ -291,6 +291,9 @@ export async function apiMiddleware(req: IncomingMessage, res: ServerResponse, n
       const versions = l.history(key).filter((f) => f.status !== 'proposed' && f.status !== 'rejected').map((f) => ({ at: f.validFrom, status: f.status, origin: f.origin, why: f.why, data: f.data }));
       return send(res, 200, { versions });
     }
+    if (route === 'GET /api/recurring') {
+      return send(res, 200, recurringView(l, new Date(), url.searchParams.get('period') ?? '12'));
+    }
     if (route === 'GET /api/state') {
       await autoMarket(name, l);
       return send(res, 200, buildState(name, caseOf(url), access));

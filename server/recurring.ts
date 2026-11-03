@@ -27,6 +27,15 @@ export interface RecurringItem {
   delta: number | null;
   /** Une dépense qu'on peut renégocier ou résilier (assurance, télécom, abonnement, frais). */
   lever: boolean;
+  /** Les paiements les plus récents de la période, tels que la banque les écrit. */
+  lines: Line[];
+}
+
+export interface Line {
+  date: string;
+  amount: number;
+  account: string;
+  text: string;
 }
 
 export interface Merchant {
@@ -37,6 +46,7 @@ export interface Merchant {
   count: number;
   trend: number | null;
   delta: number | null;
+  lines: Line[];
 }
 
 export interface OneOff {
@@ -45,6 +55,7 @@ export interface OneOff {
   amount: number;
   category: string;
   bien: string | null;
+  text: string;
 }
 
 export interface CategoryMove {
@@ -103,7 +114,7 @@ function cadenceOf(months: number[]): RecurringItem['cadence'] {
   return 'régulier';
 }
 
-export function recurringView(l: Ledger, now: Date = new Date()): RecurringView {
+export function recurringView(l: Ledger, now: Date = new Date(), period = '12'): RecurringView {
   const rows = l.raw.prepare('SELECT account, date, amount, currency, label, category, bien FROM budget_txs').all() as unknown as Row[];
   const kinds = new Map((l.raw.prepare('SELECT name, kind FROM budget_accounts').all() as { name: string; kind: string }[]).map((a) => [a.name, a.kind]));
   const rates = l.rates();
@@ -111,30 +122,50 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
   const cardMonths = new Set(rows.filter((r) => kinds.get(r.account) === 'card').map((r) => r.date.slice(0, 7)));
   const current = now.toISOString().slice(0, 7);
 
-  // Les douze derniers mois complets, et les douze précédents pour comparer.
   const all = [...new Set(rows.map((r) => r.date.slice(0, 7)))].filter((m) => m < current).sort();
   const last = all[all.length - 1];
   const empty: RecurringView = { categories: [], months: [], comparedMonths: 0, income: 0, recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0 } };
   if (!last) return empty;
-  const end = monthIndex(last);
-  const inWindow = (m: string) => monthIndex(m) > end - 12 && monthIndex(m) <= end;
-  const inPrior = (m: string) => monthIndex(m) > end - 24 && monthIndex(m) <= end - 12;
-  const months = all.filter(inWindow);
-  // Les relevés réellement complets commencent au premier mois fourni (au moins 40 % du volume habituel), pas à la première ligne isolée d'un vieux compte.
+  // La période choisie: 12 derniers mois, une année (à ce jour si elle n'est pas finie) ou un mois.
+  const pick = /^\d{4}-\d{2}$/.test(period) ? all.filter((m) => m === period) : /^\d{4}$/.test(period) ? all.filter((m) => m.startsWith(period)) : all.slice(-12);
+  const sel = pick.length > 0 ? pick : all.slice(-12);
+  const end = monthIndex(sel[sel.length - 1]);
+  // Ce qui est « récurrent » se juge sur les douze mois qui finissent avec la période, quelle que soit sa longueur.
+  const inCls = (m: string) => monthIndex(m) > end - 12 && monthIndex(m) <= end;
+  const selSet = new Set(sel);
+  const inSel = (m: string) => selSet.has(m);
+  const months = sel;
   const perMonthCount = new Map<string, number>();
   for (const r of rows) perMonthCount.set(r.date.slice(0, 7), (perMonthCount.get(r.date.slice(0, 7)) ?? 0) + 1);
-  const recentCounts = months.map((m) => perMonthCount.get(m) ?? 0).sort((a, b) => a - b);
+  const recentCounts = all.filter(inCls).map((m) => perMonthCount.get(m) ?? 0).sort((a, b) => a - b);
   const threshold = Math.max(3, 0.4 * (recentCounts[Math.floor(recentCounts.length / 2)] ?? 0));
   const denseStart = all.find((m) => (perMonthCount.get(m) ?? 0) >= threshold);
   const denseIdx = denseStart ? monthIndex(denseStart) : Infinity;
   // On ne compare que les mois dont le mois jumeau, un an plus tôt, est couvert: « même période l'an dernier ».
-  const pairMonths = months.filter((m) => monthIndex(m) - 12 >= denseIdx);
-  const inPair = (m: string) => pairMonths.includes(m);
-  const inPairPrior = (m: string) => pairMonths.some((x) => monthIndex(x) - 12 === monthIndex(m));
-  const priorCovered = pairMonths.length >= 6;
+  const pairMonths = sel.filter((m) => monthIndex(m) - 12 >= denseIdx);
+  const pairSet = new Set(pairMonths);
+  const priorSet = new Set(pairMonths.map((m) => `${Number(m.slice(0, 4)) - 1}-${m.slice(5, 7)}`));
+  const inPair = (m: string) => pairSet.has(m);
+  const inPairPrior = (m: string) => priorSet.has(m);
+  const priorCovered = pairMonths.length >= Math.min(6, sel.length);
+  const scale = pairMonths.length > 0 ? sel.length / pairMonths.length : 1;
 
-  const spend = rows.filter((r) => r.amount < 0 && !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))));
-  const income = rows.filter((r) => r.category === 'revenu' && r.amount > 0 && inWindow(r.date.slice(0, 7))).reduce((t, r) => t + toChf(r.amount, r.currency), 0);
+  // Noms (et au besoin catégories) choisis par l'utilisateur: réglage « budget.fournisseurs », liste de { re, name, category? }.
+  const aliases = (() => {
+    try {
+      return (JSON.parse(l.getSetting('budget.fournisseurs') || '[]') as { re: string; name: string; category?: string }[]).filter((a) => a.re && a.name);
+    } catch {
+      return [];
+    }
+  })();
+  const aliasOf = (label: string) => aliases.find((a) => new RegExp(a.re, 'i').test(label));
+  const spend = rows
+    .filter((r) => r.amount < 0 && !NOT_SPEND.has(r.category) && !(r.category === 'carte' && cardMonths.has(r.date.slice(0, 7))))
+    .map((r) => {
+      const hit = aliasOf(r.label);
+      return hit?.category ? { ...r, category: hit.category } : r;
+    });
+  const income = rows.filter((r) => r.category === 'revenu' && r.amount > 0 && inSel(r.date.slice(0, 7))).reduce((t, r) => t + toChf(r.amount, r.currency), 0);
 
   // Un fournisseur est ce qu'on dirait à voix haute: « Migros », « CSS », « Intérêts hypothécaires, Osiris ».
   const hh = l.current().find((x) => x.key === 'household');
@@ -142,16 +173,8 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     ...(typeof hh?.data.name === 'string' ? [normalizeLabel(String(hh.data.name))] : []),
     ...(Array.isArray(hh?.data.members) ? (hh!.data.members as { name?: unknown; role?: unknown }[]).filter((m) => m.role !== 'child' && typeof m.name === 'string').map((m) => normalizeLabel(String(m.name))) : []),
   ].filter((n) => n.length >= 3);
-  // Noms choisis par l'utilisateur (réglage « budget.fournisseurs »: liste de { re, name }), prioritaires sur la lecture automatique.
-  const aliases = (() => {
-    try {
-      return (JSON.parse(l.getSetting('budget.fournisseurs') || '[]') as { re: string; name: string }[]).filter((a) => a.re && a.name);
-    } catch {
-      return [];
-    }
-  })();
   const supplier = (r: Row): string => {
-    const hit = aliases.find((a) => new RegExp(a.re, 'i').test(r.label));
+    const hit = aliasOf(r.label);
     if (hit) return hit.name;
     return isGenericPayee(r.label) ? normalizeLabel(r.label).slice(0, 40) : supplierOf(r.label, { selfNames, bien: r.bien }).name;
   };
@@ -167,54 +190,57 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
   }
   const sum = (rs: Row[], f: (m: string) => boolean) => rs.filter((r) => f(r.date.slice(0, 7))).reduce((t, r) => t - toChf(r.amount, r.currency), 0);
   const topCat = (g: G) => [...g.cat.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const toLines = (rs: Row[]): Line[] => [...rs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map((r) => ({ date: r.date, amount: -toChf(r.amount, r.currency), account: r.account, text: r.label.replace(/\s+/g, ' ').slice(0, 110) }));
 
-  const perYearOf = (rs: Row[]) => rs.reduce((t, r) => t - toChf(r.amount, r.currency), 0);
   const recurring: RecurringItem[] = [];
   const merchants: Merchant[] = [];
   const oneOffs: OneOff[] = [];
   const totals = { recurring: 0, daily: 0, exceptional: 0 };
 
   for (const g of groups.values()) {
-    const win = g.rows.filter((r) => inWindow(r.date.slice(0, 7)));
-    if (win.length === 0) continue;
+    const win = g.rows.filter((r) => inCls(r.date.slice(0, 7)));
+    const chosen = g.rows.filter((r) => inSel(r.date.slice(0, 7)));
+    if (chosen.length === 0) continue;
+    const base = win.length > 0 ? win : chosen;
     const category = topCat(g);
     const monthsSet = [...new Set(g.rows.map((r) => monthIndex(r.date.slice(0, 7))))];
-    const winMonths = [...new Set(win.map((r) => r.date.slice(0, 7)))];
-    const perMonthCount = win.length / Math.max(winMonths.length, 1);
+    const winMonths = [...new Set(base.map((r) => r.date.slice(0, 7)))];
+    const perMonthCnt = base.length / Math.max(winMonths.length, 1);
     // Montants par mois: stables pour un abonnement, éparpillés pour un commerçant.
-    const monthlyTotals = winMonths.map((m) => win.filter((r) => r.date.slice(0, 7) === m).reduce((t, r) => t - toChf(r.amount, r.currency), 0));
+    const monthlyTotals = winMonths.map((m) => base.filter((r) => r.date.slice(0, 7) === m).reduce((t, r) => t - toChf(r.amount, r.currency), 0));
     const mean = monthlyTotals.reduce((t, v) => t + v, 0) / monthlyTotals.length;
     const cv = mean > 0 ? Math.sqrt(monthlyTotals.reduce((t, v) => t + (v - mean) ** 2, 0) / monthlyTotals.length) / mean : 9;
-    const generic = isGenericPayee(win[0].label);
+    const generic = isGenericPayee(base[0].label);
     const isFixed = !generic && FIXED.has(category) && winMonths.length >= 2 && cv <= (LOOSE.has(category) ? 2 : 0.6);
-    const isStable = !generic && !ONE_OFF_CATEGORIES.has(category) && winMonths.length >= 6 && cv <= 0.15 && perMonthCount <= 1.5;
-    const isAnnual = !generic && (LEVER.has(category) ? perYearOf(win) >= 100 : FIXED.has(category)) && winMonths.length === 1 && (LEVER.has(category) || monthsSet.some((m) => Math.abs(m - monthIndex(winMonths[0]) + 12) <= 1 || Math.abs(m - monthIndex(winMonths[0]) - 12) <= 1));
+    const isStable = !generic && !ONE_OFF_CATEGORIES.has(category) && winMonths.length >= 6 && cv <= 0.15 && perMonthCnt <= 1.5;
+    const baseTotal = base.reduce((t, r) => t - toChf(r.amount, r.currency), 0);
+    const isAnnual = !generic && (LEVER.has(category) ? baseTotal >= 100 : FIXED.has(category)) && winMonths.length === 1 && (LEVER.has(category) || monthsSet.some((m) => Math.abs(m - monthIndex(winMonths[0]) + 12) <= 1 || Math.abs(m - monthIndex(winMonths[0]) - 12) <= 1));
 
-    const perYear = sum(win, () => true);
+    const amount = sum(chosen, () => true);
     const prior = priorCovered ? sum(g.rows, inPairPrior) : null;
     const now12 = priorCovered ? sum(g.rows, inPair) : 0;
     const trend = prior !== null && prior > 50 ? now12 / prior - 1 : null;
-    const delta = prior !== null && prior > 50 ? ((now12 - prior) * 12) / pairMonths.length : null;
-    const bien = win.find((r) => r.bien)?.bien ?? null;
+    const delta = prior !== null && prior > 50 ? (now12 - prior) * scale : null;
+    const bien = chosen.find((r) => r.bien)?.bien ?? null;
 
     if (isFixed || isStable || isAnnual) {
-      recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear, perMonth: perYear / 12, count: win.length, last: win.map((r) => r.date).sort().pop() as string, trend, delta, lever: LEVER.has(category) });
-      totals.recurring += perYear;
+      recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, lever: LEVER.has(category), lines: toLines(chosen) });
+      totals.recurring += amount;
       continue;
     }
     // Le reste: une grosse dépense unique ou un impôt est exceptionnel, le reste est du quotidien.
     let dailyTotal = 0;
-    for (const r of win) {
+    for (const r of chosen) {
       const chf = -toChf(r.amount, r.currency);
       if (ONE_OFF_CATEGORIES.has(r.category) || chf >= 1500) {
-        oneOffs.push({ label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien });
+        oneOffs.push({ label: (isGenericPayee(r.label) ? r.label : supplier(r)).trim().slice(0, 60), date: r.date, amount: chf, category: r.category, bien: r.bien, text: r.label.replace(/\s+/g, ' ').slice(0, 110) });
         totals.exceptional += chf;
       } else {
         dailyTotal += chf;
       }
     }
     totals.daily += dailyTotal;
-    if (dailyTotal >= 100) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: win.length, trend, delta });
+    if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: chosen.length, trend, delta, lines: toLines(chosen.filter((r) => !(ONE_OFF_CATEGORIES.has(r.category) || -toChf(r.amount, r.currency) >= 1500))) });
   }
 
   // Par catégorie, pour que le passage d'un fournisseur à un autre ne passe pas pour une baisse ou une hausse.
@@ -225,7 +251,7 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
       const m = r.date.slice(0, 7);
       const c = byCat.get(r.category) ?? { now: 0, prior: 0, year: 0 };
       const chf = -toChf(r.amount, r.currency);
-      if (inWindow(m)) c.year += chf;
+      if (inSel(m)) c.year += chf;
       if (inPair(m)) c.now += chf;
       if (inPairPrior(m)) c.prior += chf;
       byCat.set(r.category, c);
@@ -233,8 +259,8 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     for (const [category, c] of byCat) {
       if (c.prior < 200) continue;
       const trend = c.now / c.prior - 1;
-      const delta = ((c.now - c.prior) * 12) / pairMonths.length;
-      if (Math.abs(trend) >= 0.1 && Math.abs(delta) >= 300) categories.push({ category, perYear: c.year, trend, delta });
+      const delta = (c.now - c.prior) * scale;
+      if (Math.abs(trend) >= 0.1 && Math.abs(delta) >= 300 * Math.min(1, sel.length / 12)) categories.push({ category, perYear: c.year, trend, delta });
     }
     categories.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   }
