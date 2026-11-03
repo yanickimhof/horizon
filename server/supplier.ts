@@ -65,6 +65,21 @@ function memoType(memo: string): string | null {
   return null;
 }
 
+const SMALL = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'et', 'en', 'au', 'aux', 'sur', 'sous', 'pour', 'd', 'l', 'a', 'à']);
+
+/** « BOULANGERIE DU MARCHE » et « boulangerie du marche » s'écrivent pareil: majuscule à chaque mot, sauf les petits mots et les sigles de trois lettres au plus. */
+export function titleCase(name: string): string {
+  let first = true;
+  return name.replace(/\p{L}+/gu, (w) => {
+    const isFirst = first;
+    first = false;
+    const lower = w.toLowerCase();
+    if (!isFirst && SMALL.has(lower)) return lower;
+    if (w.length <= 3 && w === w.toUpperCase() && /^[A-ZÀ-Ý]+$/.test(w)) return w;
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  });
+}
+
 export interface Supplier {
   name: string;
   /** Texte libre après l'adresse, pour comprendre l'opération. */
@@ -110,6 +125,5 @@ export function supplierOf(label: string, opts: { selfNames: string[]; bien?: st
   if (name.length < 2) name = counterparty;
   // « Www.exemple.com » et « EXEMPLE.COM » sont le même site: sans préfixe ni extension, et en minuscules avec majuscule initiale si tout était en capitales.
   name = name.replace(/^www\./i, '').replace(/\.(com|ch|net|org|fr|de|io|co|eu)\b/gi, '');
-  if (name === name.toUpperCase() && /[A-Z]/.test(name)) name = name.toLowerCase();
-  return { name: name.charAt(0).toUpperCase() + name.slice(1), memo, self: false };
+  return { name: titleCase(name), memo, self: false };
 }

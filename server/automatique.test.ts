@@ -173,8 +173,10 @@ describe('un fournisseur se dit comme on le dit', () => {
     expect(supplierOf('APCOA Parking Montbenon, Lausanne CH', me).name).toBe('Parkings');
     expect(supplierOf('NOTION LABS, [TEL] IE', me).name).toBe('Notion');
     expect(supplierOf('ALIEXPRESS.COM, [TEL] IE', me).name).toBe('AliExpress');
+    expect(supplierOf('HOTEL DES RASSES SA, 1452 Les Rasses', me).name).toBe('Hotel des Rasses');
+    expect(supplierOf('NG DENTAL SURGERY, Lausanne CH', me).name).toBe('NG Dental Surgery');
     expect(supplierOf('Www.aliexpress.com, Dublin', me).name).toBe('AliExpress');
-    expect(supplierOf('BOULANGERIE DU MARCHE.CH, Lausanne CH', me).name).toBe('Boulangerie du marche');
+    expect(supplierOf('BOULANGERIE DU MARCHE.CH, Lausanne CH', me).name).toBe('Boulangerie du Marche');
     expect(supplierOf("Commune d'Echallens, 1040 Echallens", me).name).toBe("Commune d'Echallens");
     expect(supplierOf('Débit des taxes pour la tenue de compte', me).name).toBe('Frais bancaires');
   });
