@@ -136,6 +136,7 @@ export interface BudgetMonth {
 
 export interface BudgetView {
   homes: string[];
+  biens: { re: string; bien: string; home?: boolean; from?: string; to?: string }[];
   excluded: { key: string; label: string; date: string; amount: number }[];
   estimates: { id: string; label: string; amount: number; currency: string; per: 'month' | 'year'; category: string }[];
   accounts: { name: string; kind: 'bank' | 'card' | 'twint' | 'cash'; currency: string; count: number; from: string; to: string }[];

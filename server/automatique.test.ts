@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Ledger } from './ledger';
-import { budgetView, labelTransactions, storeStatements } from './budget';
+import { budgetView, labelTransactions, setBiens, storeStatements } from './budget';
 import { loadDemoBudget } from './demo-budget';
 import { classify, isGenericPayee, signatureKey, type ParsedStatement } from './statements';
 
@@ -96,5 +96,20 @@ describe('démonstration', () => {
 
   it('« Café » est reconnu comme un restaurant (une lettre accentuée ne casse pas la limite de mot)', () => {
     expect(classify('Café du Marché CH', -23).category).toBe('restaurants');
+  });
+});
+
+describe('biens saisis par l’utilisateur', () => {
+  it('rattache les lignes au bien, avec période, et défait le rattachement quand la règle disparaît', () => {
+    const l = new Ledger(':memory:');
+    storeStatements(l, [stmt('Compte', [['2026-03-05', 'Régie du Lac, Loyer studio', 1200], ['2026-09-05', 'Régie du Lac, Loyer studio', 1300], ['2026-03-09', 'Menuiserie Dupont, Facture 12', -800]])], 'c.csv');
+    const bien = (label: string, date: string) => (l.raw.prepare('SELECT bien FROM budget_txs WHERE label LIKE ? AND date = ?').get(`%${label}%`, date) as { bien: string | null }).bien;
+    setBiens(l, [{ re: 'Régie du Lac', bien: 'Studio', to: '2026-06-30' }, { re: 'Régie du Lac', bien: 'Appartement', from: '2026-07-01', home: true }, { re: 'Menuiserie Dupont', bien: 'Studio' }]);
+    expect(bien('Régie', '2026-03-05')).toBe('Studio');
+    expect(bien('Régie', '2026-09-05')).toBe('Appartement');
+    expect(budgetView(l).homes).toEqual(['Appartement']);
+    setBiens(l, []);
+    expect(bien('Régie', '2026-03-05')).toBeNull();
+    expect(() => setBiens(l, [{ re: '(', bien: 'X' }])).toThrow(/Motif invalide/);
   });
 });

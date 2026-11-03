@@ -51,7 +51,7 @@ Une relecture suivante ne lit que les nouveaux fichiers.
 Elles ne figurent pas dans les relevés, mais changent tout.
 
 1. **Le foyer.** Prénoms des adultes et des enfants (onglet Données). Un virement vers toi-même est un mouvement entre tes comptes, pas une dépense; un virement vers un enfant est une dépense du foyer.
-2. **Les biens immobiliers (si tu en as).** Pour chaque bien: nom, valeur, hypothèque. Les relevés d'intérêts indiquent un numéro de prêt: associe chaque numéro à son bien, et chaque fournisseur de travaux au sien. Horizon sépare ensuite domicile et locatif, avec loyers, charges et net par bien.
+2. **Les biens immobiliers (si tu en as).** Pour chaque bien: nom, valeur, hypothèque. Dans la carte « Mes biens » de l’écran Budget, associe chaque fournisseur (régie, copropriété, artisan, numéro de prêt) à son bien, avec une période si le même fournisseur change de bien, et marque ton domicile. Horizon sépare ensuite domicile et locatif, avec loyers, charges et net par bien.
 3. **Ce qui sort du rythme habituel.** Un solde d'impôts d'une année précédente, un remboursement d'impôt, un gros versement unique (indemnité de départ, vente): dis-le une fois, Horizon les met à part et impute l'impôt à son année.
 
 ## 5. Lire le résultat

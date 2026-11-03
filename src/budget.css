@@ -60,3 +60,6 @@
 .budget .cattable tr.total th, .budget .cattable tr.total td { font-weight: 600; border-top: 2px solid rgba(128, 128, 128, 0.4); }
 .budget .cattable td.up { color: var(--bad, #c0392b); }
 .budget .cattable td.down { color: var(--good, #1e8e4e); }
+
+.biens-form .est-form { margin-bottom: 8px; align-items: center; }
+.biens-form .est-form input:first-child { flex: 2 1 260px; min-width: 200px; }

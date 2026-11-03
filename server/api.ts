@@ -5,7 +5,7 @@ import { claude, usageSummary, capChf } from './usage';
 import { CATEGORIES, applySignatures, buildReport, pairInternalTransfers, parseStatement } from './statements';
 import { classifyUnknown } from './statements-ai';
 import { proposeGap } from './statements-propose';
-import { addEstimate, budgetView, labelTransactions, removeEstimate, setMinorUnknownToOther, storeStatements } from './budget';
+import { addEstimate, setBiens, budgetView, labelTransactions, removeEstimate, setMinorUnknownToOther, storeStatements } from './budget';
 import { classifyStored } from './budget-ai';
 import { mkdirSync } from 'node:fs';
 import { Ledger } from './ledger';
@@ -408,6 +408,10 @@ export async function apiMiddleware(req: IncomingMessage, res: ServerResponse, n
       }
       case 'POST /api/budget/estimate': {
         addEstimate(l, { label: String(body.label ?? ''), amount: Number(body.amount), currency: String(body.currency ?? 'CHF').toUpperCase(), per: body.per === 'year' ? 'year' : 'month', category: String(body.category ?? '') });
+        break;
+      }
+      case 'POST /api/budget/biens': {
+        setBiens(l, Array.isArray(body.rules) ? body.rules : []);
         break;
       }
       case 'POST /api/budget/estimate/remove': {
