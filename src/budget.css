@@ -92,3 +92,11 @@
 .drawer[open] summary::after { content: '⌄'; }
 .drawer .inner { margin-top: 10px; }
 .drawer[open] > summary { margin-bottom: 12px; }
+
+.periodsel { border: none; background: transparent; font: inherit; font-size: 14px; color: var(--ink-2); cursor: pointer; padding: 6px 4px; }
+.toplist { list-style: none; margin: 18px auto 0; padding: 0; width: 100%; max-width: 420px; }
+.toplist li span:first-child { margin-right: 16px; }
+.toplist li { display: flex; justify-content: space-between; padding: 13px 0; border-top: 1px solid var(--line, rgba(0,0,0,.08)); font-size: 16px; }
+.toplist li:first-child { border-top: none; }
+.morelink { display: block; margin: 12px auto 0; border: none; background: none; color: var(--accent); font: inherit; font-size: 14px; cursor: pointer; }
+.subtitle { font-size: 15px; font-weight: 500; margin: 28px 0 6px; }

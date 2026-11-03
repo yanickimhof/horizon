@@ -52,11 +52,9 @@ Captures prises sur des données de démonstration inventées (famille fictive c
 
 ![Budget](docs/screenshots/budget.jpg)
 
-![Dépenses par catégorie, par année ou par mois](docs/screenshots/depenses-par-categorie.jpg)
+![Tout voir: catégories, immobilier, travaux](docs/screenshots/depenses-par-categorie.jpg)
 
-![Immobilier par bien](docs/screenshots/immobilier.jpg)
-
-- **Budget** (accueil): un chiffre (ce qui reste), une barre où chaque bloc est une catégorie (touche un bloc pour le détail), et trois tiroirs: immobilier et travaux, tableau par catégorie (par année ou par mois), exceptionnel. Sélecteur unique: mois, 12 mois ou une année. L'icône dossier ouvre les documents et les points à traiter.
+- **Budget** (accueil): un chiffre (ce qui reste par mois) et les cinq plus grosses dépenses. « Tout voir » ouvre les catégories (moyenne mensuelle, par année, mois par mois), l'immobilier et les travaux par bien. L'icône dossier ouvre les documents, les lignes à identifier, tes biens et les dépenses hors relevés. Période: un petit menu en haut.
 - **Importer**: lit un dossier ou des fichiers, masque les identifiants.
 - **À valider**: faits proposés par la lecture des documents, en attente de ton accord.
 - **Données**: tout ce qui est connu, modifiable, avec historique.

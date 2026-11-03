@@ -55,7 +55,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const full = useMemo(() => b.months.filter((m) => !m.partial), [b.months]);
   const last = full[full.length - 1];
   const [period, setPeriod] = useState('12');
-  const [view, setView] = useState<'home' | 'todo'>(full.length > 0 ? 'home' : 'todo');
+  const [view, setView] = useState<'home' | 'all' | 'todo'>(full.length > 0 ? 'home' : 'todo');
   const [sel, setSel] = useState('');
   const years = useMemo(() => [...new Set(full.filter((m) => m.spend > 0).map((m) => m.month.slice(0, 4)))].filter((y) => full.filter((m) => m.month.startsWith(y) && m.spend > 0).length >= 6).sort().reverse(), [full]);
   const yearOk = period === '12' || years.includes(period);
@@ -119,7 +119,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     return Object.entries(t).sort((p, q) => rank(p[0]) - rank(q[0]) || p[0].localeCompare(q[0]));
   }, [used, b.homes]);
   // Dépenses par catégorie, par année ou par mois, pour voir d'un coup d'œil ce qu'une catégorie coûte sur l'année.
-  const [catView, setCatView] = useState<'annee' | 'mois'>('annee');
+  const [catView, setCatView] = useState<'liste' | 'annee' | 'mois'>('liste');
   const catTable = useMemo(() => {
     type Col = { key: string; label: string; sub: string; totals: Record<string, number>; n: number };
     let cols: Col[] = [];
@@ -254,96 +254,63 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   };
 
   const todo = b.unknown.count + b.excluded.length;
-  const PAL = ['#534AB7', '#0F6E56', '#993C1D', '#185FA5', '#993556', '#854F0B', '#5F5E5A'];
   const reste = avgIncome - avgSpend;
-  const blocks = useMemo(() => {
-    const top = cats.slice(0, 6);
-    const others = cats.slice(6);
-    const rest = others.reduce((s, c) => s + c.avg, 0);
-    return [
-      ...top.map((c, i) => ({ key: c.key, label: LABEL[c.key] ?? c.key, v: c.avg, color: PAL[i], trend: c.trend })),
-      ...(rest > 0 ? [{ key: '_autres', label: 'Autres', v: rest, color: PAL[6], trend: null as number | null }] : []),
-      ...(reste > 0 ? [{ key: '_reste', label: 'Reste', v: reste, color: '#639922', trend: null as number | null }] : []),
-    ];
-  }, [cats, reste]);
-  const cur = blocks.find((x) => x.key === sel) ?? blocks[0];
-  const denom = Math.max(avgIncome, avgSpend, 1);
-  const spark = useMemo(() => {
-    if (!cur) return [];
-    const other = new Set(cats.slice(6).map((c) => c.key));
-    return full.slice(-12).map((m) => (cur.key === '_reste' ? m.income - m.spend : cur.key === '_autres' ? [...other].reduce((s, k) => s + (m.byCategory[k] ?? 0), 0) : m.byCategory[cur.key] ?? 0));
-  }, [cur, full, cats]);
-  const sparkMax = Math.max(1, ...spark.map((v) => Math.abs(v)));
-  const seg = (
-    <div className="seg" role="tablist" aria-label="Période">
-      <button className={period === 'm' ? 'on' : ''} onClick={() => setPeriod('m')}>Mois</button>
-      <button className={period === '12' ? 'on' : ''} onClick={() => setPeriod('12')}>12 mois</button>
-      {years.map((y) => <button key={y} className={period === y ? 'on' : ''} onClick={() => setPeriod(y)}>{y}</button>)}
-    </div>
+  const topCats = cats.slice(0, 5);
+  const periodSelect = (
+    <select className="periodsel" value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Période">
+      <option value="m">{last ? monthName(last.month) : 'Mois'}</option>
+      <option value="12">12 derniers mois</option>
+      {years.map((y) => <option key={y} value={y}>{y}</option>)}
+    </select>
   );
 
   return (
     <div className="page wide budget">
       <div className="topbar">
-        {view === 'home' && last ? seg : <button className="iconbtn" onClick={() => setView('home')} aria-label="Retour"><ArrowLeft size={18} strokeWidth={1.6} /></button>}
-        {view === 'home' && last ? <button className="iconbtn" onClick={() => setView('todo')} aria-label="Documents et points à traiter" title="Documents et points à traiter"><FolderOpen size={18} strokeWidth={1.6} />{todo > 0 ? <i className="badge">{todo}</i> : null}</button> : <span className="muted small">Documents</span>}
+        {view === 'home' && last ? periodSelect : <button className="iconbtn" onClick={() => setView('home')} aria-label="Retour"><ArrowLeft size={18} strokeWidth={1.6} /></button>}
+        {view === 'home' && last ? <button className="iconbtn" onClick={() => setView('todo')} aria-label="Documents et points à traiter" title="Documents et points à traiter"><FolderOpen size={18} strokeWidth={1.6} />{todo > 0 ? <i className="badge">{todo}</i> : null}</button> : <span className="muted small">{view === 'all' ? periodLabel : 'Documents'}</span>}
       </div>
+
       {view === 'home' && last ? (
         <>
           <section className="hero">
             <p className="unit">Reste {period === 'm' ? '' : 'par mois'}</p>
             <p className={'big xl' + (reste < 0 ? ' neg' : '')}>{money(reste)}</p>
-            <p className="unit">revenus {money(avgIncome)} · dépenses {money(avgSpend)}</p>
           </section>
-          <div className="stackbar" role="group" aria-label="Répartition des revenus">
-            {blocks.map((x) => <button key={x.key} className={x.key === cur?.key ? 'on' : ''} style={{ flex: Math.max(x.v, 1) / denom, background: x.color }} aria-label={`${x.label} ${Math.round((x.v / denom) * 100)} %`} onClick={() => setSel(x.key)} />)}
+          <ul className="toplist">
+            {topCats.map((c) => (
+              <li key={c.key}><span>{LABEL[c.key] ?? c.key}</span><span>{money(c.avg)}</span></li>
+            ))}
+          </ul>
+          <button className="morelink" onClick={() => setView('all')}>Tout voir</button>
+        </>
+      ) : null}
+
+      {view === 'all' && last ? (
+        <>
+          <div className="periods" role="tablist" aria-label="Affichage des catégories">
+            <button className={'btn' + (catView === 'liste' ? ' primary' : '')} onClick={() => setCatView('liste')}>Par mois en moyenne</button>
+            <button className={'btn' + (catView === 'annee' ? ' primary' : '')} onClick={() => setCatView('annee')}>Par année</button>
+            <button className={'btn' + (catView === 'mois' ? ' primary' : '')} onClick={() => setCatView('mois')}>Mois par mois</button>
           </div>
-          <div className="legrow">
-            {blocks.map((x) => <button key={x.key} className={x.key === cur?.key ? 'on' : ''} onClick={() => setSel(x.key)}><i style={{ background: x.color }} />{x.label} {Math.round((x.v / denom) * 100)} %</button>)}
-          </div>
-          {cur ? (
-            <section className="detcard">
-              <div className="h"><span>{cur.label}</span><span className="a">{money(cur.v)}</span></div>
-              <p className="unit">{Math.round((cur.v / denom) * 100)} % des revenus{cur.key !== '_reste' && avgIncome > 0 ? ` · ${(Math.round((cur.v / avgIncome) * 210) / 10).toString().replace('.', ',')} jours de travail par mois` : ''}{cur.trend !== null && Math.abs(cur.trend) > 0.15 ? ` · ${cur.trend > 0 ? 'en hausse' : 'en baisse'} ${Math.abs(Math.round(cur.trend * 100))} %` : ''}</p>
-              <div className="spark" role="img" aria-label="12 derniers mois">{spark.map((v, i) => <i key={i} className={i === spark.length - 1 ? 'last' : ''} style={{ height: `${Math.max(3, (Math.abs(v) / sparkMax) * 100)}%` }} />)}</div>
-              <p className="unit">12 derniers mois</p>
-            </section>
-          ) : null}
-          {immoRows.length > 0 || worksByBien.length > 0 ? (
-            <details className="drawer">
-              <summary>Immobilier et travaux</summary>
-          {immoRows.length > 0 ? (
-            <div className="inner">
-              <ul className="cats">
-                <li><span className="name muted small">Bien</span><span className="amt muted small">Loyers · charges · net</span></li>
-                {immoRows.map(([bien, v]) => (
-                  <li key={bien}>
-                    <span className="name">{(b.homes ?? []).includes(bien) && !/domicile/i.test(bien) ? `${bien} (domicile)` : bien}</span>
-                    <span className="amt">{(b.homes ?? []).includes(bien) ? `${money(v.charges)} de charges` : `${money(v.loyers)} · ${money(v.charges)} · ${money(v.loyers - v.charges)}`}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="muted small">Sur {periodLabel}. Les loyers sont nets de charges PPE et de gérance. Charges: intérêts hypothécaires, charges PPE, décomptes et travaux.</p>
-            </div>
-          ) : null}
-          {worksByBien.length > 0 ? (
-            <div className="inner">
-              <ul className="cats">
-                {worksByBien.map(([bien, total]) => (
-                  <li key={bien}>
-                    <span className="name">{bien}</span>
-                    <span className="amt">{money(total)}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="muted small">Total sur {periodLabel}. Les charges PPE et les intérêts restent dans Immobilier.</p>
-            </div>
-          ) : null}
-            </details>
-          ) : null}
-          {catTable.cols.length > 0 && catTable.keys.length > 0 ? (
-            <details className="drawer">
-              <summary>Tableau par catégorie</summary>
+          {catView === 'liste' ? (
+            <>
+            <ul className="cats">
+              {cats.map((c) => (
+                <li key={c.key}>
+                  <span className="name">{LABEL[c.key] ?? c.key}</span>
+                  <span className="share"><i style={{ width: `${avgSpend > 0 ? Math.min(100, (c.avg / avgSpend) * 100) : 0}%` }} /></span>
+                  <span className="amt">{money(c.avg)}{c.prevAvg !== null && prevYear.length >= 6 ? <span className="muted small"> ({Number(period) - 1}: {money(c.prevAvg)})</span> : null}</span>
+                  <span className={'trend' + (c.trend !== null && c.trend > 0.15 ? ' up' : c.trend !== null && c.trend < -0.15 ? ' down' : '')}>
+                    {c.trend === null ? '' : c.trend > 0.15 ? <><ArrowUpRight size={14} strokeWidth={1.8} />{Math.round(c.trend * 100)} %</> : c.trend < -0.15 ? <><ArrowDownRight size={14} strokeWidth={1.8} />{Math.round(c.trend * 100)} %</> : 'stable'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+              <p className="muted small">Moyenne par mois. La tendance compare les trois derniers mois aux trois précédents.</p>
+            </>
+          ) : catTable.cols.length > 0 && catTable.keys.length > 0 ? (
+            <>
               <div className="periods" role="tablist" aria-label="Affichage des catégories">
                 <button className={'btn' + (catView === 'annee' ? ' primary' : '')} onClick={() => setCatView('annee')}>Par année</button>
                 <button className={'btn' + (catView === 'mois' ? ' primary' : '')} onClick={() => setCatView('mois')}>Par mois</button>
@@ -379,14 +346,43 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                 </table>
               </div>
               <p className="muted small">{catView === 'annee' ? 'Total payé dans l’année, impôts rattachés à leur année. L’évolution compare la moyenne mensuelle des deux dernières années.' : `Dépenses de chaque mois sur ${periodLabel}.`}</p>
-            </details>
+
+            </>
           ) : null}
-          <details className="drawer">
-            <summary>Exceptionnel</summary>
-            <p className="muted small">Dépenses habituelles: {money(avgSpend - avgOneOff)} par mois, sans travaux ni montants uniques ({money(avgOneOff)}). Versements uniques non comptés dans le revenu: {money(sum((m) => m.exceptional))} sur {periodLabel}.</p>
-          </details>
+          <p className="muted small">Revenus {money(avgIncome)} par mois, dépenses {money(avgSpend)}, dont {money(avgOneOff)} de travaux et montants uniques. Versements uniques non comptés: {money(sum((m) => m.exceptional))}.</p>
+          {immoRows.length > 0 ? (
+            <h3 className="subtitle">Immobilier</h3>
+<h3 className="subtitle">Travaux par bien</h3>
+<div className="inner">
+              <ul className="cats">
+                <li><span className="name muted small">Bien</span><span className="amt muted small">Loyers · charges · net</span></li>
+                {immoRows.map(([bien, v]) => (
+                  <li key={bien}>
+                    <span className="name">{(b.homes ?? []).includes(bien) && !/domicile/i.test(bien) ? `${bien} (domicile)` : bien}</span>
+                    <span className="amt">{(b.homes ?? []).includes(bien) ? `${money(v.charges)} de charges` : `${money(v.loyers)} · ${money(v.charges)} · ${money(v.loyers - v.charges)}`}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted small">Sur {periodLabel}. Les loyers sont nets de charges PPE et de gérance. Charges: intérêts hypothécaires, charges PPE, décomptes et travaux.</p>
+            </div>
+          ) : null}
+          {worksByBien.length > 0 ? (
+            <div className="inner">
+              <ul className="cats">
+                {worksByBien.map(([bien, total]) => (
+                  <li key={bien}>
+                    <span className="name">{bien}</span>
+                    <span className="amt">{money(total)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted small">Total sur {periodLabel}. Les charges PPE et les intérêts restent dans Immobilier.</p>
+            </div>
+          ) : null}
+
         </>
       ) : null}
+
       {view === 'todo' || !last ? (
         <>
       <section className="tile import">
