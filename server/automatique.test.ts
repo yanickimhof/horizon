@@ -171,6 +171,8 @@ describe('un fournisseur se dit comme on le dit', () => {
     expect(supplierOf('Débit TWINT Parkingpay-TWINT 0400003359081185', me).name).toBe('Parkings');
     expect(supplierOf('APCOA Parking Montbenon, Lausanne CH', me).name).toBe('Parkings');
     expect(supplierOf('NOTION LABS, [TEL] IE', me).name).toBe('Notion');
+    expect(supplierOf("Commune d'Echallens, 1040 Echallens", me).name).toBe("Commune d'Echallens");
+    expect(supplierOf('Débit des taxes pour la tenue de compte', me).name).toBe('Frais bancaires');
   });
   it('lit la mention libre quand le bénéficiaire est soi-même', () => {
     expect(supplierOf("Monsieur Alex Exemple &, Madame Sam Exemple, 1040 Echallens Débit d'intérêts Hypothèque SARON 70.232.040", { ...me, bien: 'Osiris' }).name).toBe('Intérêts hypothécaires, Osiris');
