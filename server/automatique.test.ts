@@ -346,3 +346,16 @@ describe('soldes de loyers', () => {
     expect(Math.round(v.months.find((m) => m.month === '2025-09')!.immo['Non réparti'].loyers)).toBe(2500);
   });
 });
+
+describe('répartition manuelle d’un solde de loyers', () => {
+  it('répartit le solde entre les biens choisis, au prorata des loyers habituels', () => {
+    const l = new Ledger(':memory:');
+    storeStatements(l, [stmt('Loyer', [['2026-01-20', 'REGIE EXEMPLE SA, Lausanne Loyer studio', 1000], ['2026-01-20', 'REGIE EXEMPLE SA, Lausanne Loyer villa', 3000], ['2025-09-09', 'REGIE EXEMPLE SA, Lausanne Versement disponible', 2500]])], 'l.csv');
+    setBiens(l, [{ re: 'studio', bien: 'Studio' }, { re: 'villa', bien: 'Villa' }]);
+    l.setSetting('budget.repartitions', JSON.stringify([{ re: 'versement disponible', date: '2025-09-09', biens: ['Studio', 'Villa'] }]));
+    const m = budgetView(l, new Date('2026-03-01')).months.find((x) => x.month === '2025-09')!;
+    expect(m.immo['Non réparti']).toBeUndefined();
+    expect(Math.round(m.immo['Studio'].loyers)).toBe(625);
+    expect(Math.round(m.immo['Villa'].loyers)).toBe(1875);
+  });
+});

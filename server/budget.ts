@@ -461,6 +461,15 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
     }
     return out;
   })();
+  // Un versement de régie qui n'est pas un loyer mensuel (solde, régularisation) peut être réparti à la main entre des biens:
+  // réglage « budget.repartitions », liste de { re, date?, biens: [...] }, réparti au prorata des loyers habituels de la régie.
+  const splits = (() => {
+    try {
+      return (JSON.parse(l.getSetting('budget.repartitions') || '[]') as { re?: string; date?: string; biens: string[] }[]).filter((x) => Array.isArray(x.biens) && x.biens.length > 0);
+    } catch {
+      return [];
+    }
+  })();
   const currentMonth = now.toISOString().slice(0, 7);
   const byMonth = new Map<string, BudgetMonth>();
   let unknownCount = 0;
@@ -486,7 +495,15 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
       // On ne répartit qu'un versement qui vaut un ou plusieurs mois de loyers complets; un solde ou une régularisation reste à rattacher.
       const monthly = shares ? Object.values(shares.amounts).reduce((t, v) => t + v, 0) : 0;
       const multiple = monthly > 0 && Math.abs(chf / monthly - Math.round(chf / monthly)) < 0.02;
-      if (shares && multiple) {
+      const split = splits.find((x) => (!x.re || new RegExp(x.re, 'i').test(r.label)) && (!x.date || r.date === x.date));
+      if (split && !(shares && multiple)) {
+        const w = split.biens.map((bn) => shares?.amounts[bn] ?? 0);
+        const tot = w.reduce((t, v) => t + v, 0);
+        split.biens.forEach((bn, i) => {
+          const b = (e.immo[bn] = e.immo[bn] ?? { loyers: 0, charges: 0 });
+          b.loyers += chf * (tot > 0 ? w[i] / tot : 1 / split.biens.length);
+        });
+      } else if (shares && multiple) {
         for (const [bien, part] of Object.entries(shares.ratios)) {
           const b = (e.immo[bien] = e.immo[bien] ?? { loyers: 0, charges: 0 });
           b.loyers += chf * part;

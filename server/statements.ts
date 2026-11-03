@@ -118,7 +118,7 @@ const RULES: { category: string; re: RegExp; debitOnly?: boolean }[] = [
   { category: 'restaurants', re: /restaurant|caf[ée](?![a-zà-ÿ])|brasserie|pizz|mcdonald|burger|kebab|sushi|starbucks|uber eats|just\s?eat|eat\.ch|smood|bistro|tea ?room|glacier/i, debitOnly: true },
   { category: 'alimentation', re: /\bcoop\b|migros(?! bank)|denner|aldi|lidl|volg|\bspar\b|boulang|boucher|primeur|fromag|picard|k kiosk|kiosk|caviste/i, debitOnly: true },
   { category: 'vetements', re: /h&m|zara|c&a|pkz|zalando|decathlon|v[êe]tement|chaussure|ochsner|mango|uniqlo|globus/i, debitOnly: true },
-  { category: 'maison', re: /ikea|jumbo|hornbach|bauhaus|microspot|interdiscount|mediamarkt|\bfust\b|conforama|pfister|livique|brico|leroy merlin|digitec|galaxus|amazon|ali ?express|temu|brack|apple store/i, debitOnly: true },
+  { category: 'maison', re: /fnac|ikea|jumbo|hornbach|bauhaus|microspot|interdiscount|mediamarkt|\bfust\b|conforama|pfister|livique|brico|leroy merlin|digitec|galaxus|amazon|ali ?express|temu|brack|apple store/i, debitOnly: true },
   { category: 'loisirs', re: /intersport|cin[ée]ma|path[ée]|ticketcorner|fitness|gym\b|piscine|golf|skipass|mus[ée]e|th[ée][âa]tre|concert|bowling|escalade|swisspass|eventfrog|petzi/i, debitOnly: true },
   { category: 'enfants', re: /garderie|cr[èe]che|[ée]cole|jouets|toys|b[ée]b[ée]/i, debitOnly: true },
   { category: 'dons', re: /\bdon\b|fondation|croix-rouge|unicef|caritas|\bwwf\b|greenpeace|paraplég|cadeau|fleurs?\b/i, debitOnly: true },
