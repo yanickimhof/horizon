@@ -250,7 +250,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       if (r.bien || r.category === 'travaux') {
         works.push(entry);
         totals.works += chf;
-      } else if (r.category === 'impots' || chf >= limit) {
+      } else if (r.category === 'impots' || r.category === 'voyages' || chf >= limit) {
         oneOffs.push(entry);
         totals.exceptional += chf;
       } else {
