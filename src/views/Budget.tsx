@@ -332,7 +332,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
               <ul className="rows">
                 {rec.oneOffs.slice(0, cut(rec.oneOffs.length)).map((x, i) => (
                   <li key={i}>
-                    <span className="n">{x.label}<small>{dateFr(x.date)} · {LABEL[x.category] ?? x.category}{x.bien ? ` · ${x.bien}` : ''}</small></span>
+                    <span className="n">{/^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label}<small>{dateFr(x.date)} · {LABEL[x.category] ?? x.category}{x.bien ? ` · ${x.bien}` : ''}</small></span>
                     <span className="v">{money(x.amount)}</span>
                   </li>
                 ))}

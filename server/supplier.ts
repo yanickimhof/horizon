@@ -40,6 +40,7 @@ const BRANDS: [RegExp, string][] = [
   [/\btcs\b|touring club/i, 'TCS'],
   [/ca auto finance/i, 'CA Auto Finance'],
   [/\bpreply\b/i, 'Preply'],
+  [/taxes pour|prix du paquet|tenue de compte|frais de compte|frais de carte/i, 'Frais bancaires'],
 ];
 
 const LEGAL = /\b(s\.?a\.?r\.?l\.?|s\.?a\.?|ag|gmbh|inc\.?|ltd|llc|sagl|s\.?à\.?r\.?l\.?)(?=\s|$|,)/gi;
@@ -98,7 +99,7 @@ export function supplierOf(label: string, opts: { selfNames: string[]; bien?: st
   // Nom nettoyé: sans forme juridique, sans numéro de magasin, sans la ville répétée dans l'adresse.
   let name = counterparty.replace(LEGAL, ' ').replace(/[-–]\s*\d+/g, ' ').replace(/\b\d{2,}\b/g, ' ').replace(/\([^)]*\)/g, ' ');
   const city = cityMatch?.[1] ?? rest.split(/\s+/).slice(0, 2).join(' ');
-  for (const w of city.split(/\s+/).filter((x) => x.length > 3)) name = name.replace(new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'), ' ');
+  for (const w of city.split(/\s+/).filter((x) => x.length > 3)) name = name.replace(new RegExp(`(?<!['’]|\\b(?:de|du|des|la|le|les|d|l)\\s)\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'), ' ');
   name = name.replace(/\s+/g, ' ').trim();
   if (name.length < 2) name = counterparty;
   return { name: name.charAt(0).toUpperCase() + name.slice(1), memo, self: false };

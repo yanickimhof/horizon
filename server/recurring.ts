@@ -136,6 +136,7 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
   const sum = (rs: Row[], f: (m: string) => boolean) => rs.filter((r) => f(r.date.slice(0, 7))).reduce((t, r) => t - toChf(r.amount, r.currency), 0);
   const topCat = (g: G) => [...g.cat.entries()].sort((a, b) => b[1] - a[1])[0][0];
 
+  const perYearOf = (rs: Row[]) => rs.reduce((t, r) => t - toChf(r.amount, r.currency), 0);
   const recurring: RecurringItem[] = [];
   const merchants: Merchant[] = [];
   const oneOffs: OneOff[] = [];
@@ -155,7 +156,7 @@ export function recurringView(l: Ledger, now: Date = new Date()): RecurringView 
     const generic = isGenericPayee(win[0].label);
     const isFixed = !generic && FIXED.has(category) && winMonths.length >= 2 && cv <= (LOOSE.has(category) ? 2 : 0.6);
     const isStable = !generic && !ONE_OFF_CATEGORIES.has(category) && winMonths.length >= 6 && cv <= 0.15 && perMonthCount <= 1.5;
-    const isAnnual = !generic && FIXED.has(category) && winMonths.length === 1 && monthsSet.some((m) => Math.abs(m - monthIndex(winMonths[0]) + 12) <= 1 || Math.abs(m - monthIndex(winMonths[0]) - 12) <= 1);
+    const isAnnual = !generic && (LEVER.has(category) ? perYearOf(win) >= 100 : FIXED.has(category)) && winMonths.length === 1 && (LEVER.has(category) || monthsSet.some((m) => Math.abs(m - monthIndex(winMonths[0]) + 12) <= 1 || Math.abs(m - monthIndex(winMonths[0]) - 12) <= 1));
 
     const perYear = sum(win, () => true);
     const prior = priorCovered ? sum(g.rows, inPrior) : null;
