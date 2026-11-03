@@ -198,7 +198,8 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   const groups = new Map<string, G>();
   for (const r of spend) {
     const name = supplier(r);
-    const k = normalizeLabel(name);
+    // Deux écritures du même nom (casse, points, espaces) forment un seul fournisseur.
+    const k = normalizeLabel(name).replace(/[^a-z0-9]/g, '');
     const g = groups.get(k) ?? { key: k, label: isGenericPayee(r.label) ? r.label.slice(0, 40) : name, rows: [], cat: new Map<string, number>() };
     g.rows.push(r);
     g.cat.set(r.category, (g.cat.get(r.category) ?? 0) + Math.abs(toChf(r.amount, r.currency)));

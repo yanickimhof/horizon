@@ -43,6 +43,9 @@ const BRANDS: [RegExp, string][] = [
   [/\btcs\b|touring club/i, 'TCS'],
   [/ca auto finance/i, 'CA Auto Finance'],
   [/\bpreply\b/i, 'Preply'],
+  [/aliexpress/i, 'AliExpress'],
+  [/temu\b/i, 'Temu'],
+  [/\bwish\b/i, 'Wish'],
   [/taxes pour|prix du paquet|tenue de compte|frais de compte|frais de carte/i, 'Frais bancaires'],
 ];
 
@@ -105,5 +108,8 @@ export function supplierOf(label: string, opts: { selfNames: string[]; bien?: st
   for (const w of city.split(/\s+/).filter((x) => x.length > 3)) name = name.replace(new RegExp(`(?<!['’]|\\b(?:de|du|des|la|le|les|d|l)\\s)\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'), ' ');
   name = name.replace(/\s+/g, ' ').trim();
   if (name.length < 2) name = counterparty;
+  // « Www.exemple.com » et « EXEMPLE.COM » sont le même site: sans préfixe ni extension, et en minuscules avec majuscule initiale si tout était en capitales.
+  name = name.replace(/^www\./i, '').replace(/\.(com|ch|net|org|fr|de|io|co|eu)\b/gi, '');
+  if (name === name.toUpperCase() && /[A-Z]/.test(name)) name = name.toLowerCase();
   return { name: name.charAt(0).toUpperCase() + name.slice(1), memo, self: false };
 }
