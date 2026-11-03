@@ -259,7 +259,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     { k: 'exceptionnel', label: 'Exceptionnel', v: rec.totals.exceptional, color: '#b7791f' },
   ];
   const pct = (t: number | null) => (t === null ? '' : `${t > 0 ? '+' : ''}${Math.round(t * 100)} %`);
-  const Trend = ({ t, d }: { t: number | null; d: number | null }) => (t !== null && d !== null && Math.abs(t) >= 0.1 && Math.abs(d) >= 100 ? <span className={'chip ' + (t > 0 ? 'up' : 'down')}>{pct(t)}</span> : null);
+  const Trend = ({ t, d }: { t: number | null; d: number | null }) => (t !== null && d !== null && Math.abs(t) >= 0.1 && Math.abs(d) >= 100 ? <span className={'chip ' + (t > 0 ? 'up' : 'down')} title={`Par rapport aux mêmes mois un an plus tôt (${rec.comparedMonths} mois)`}>{pct(t)}</span> : null);
   const cut = (n: number) => (more ? n : 8);
   const moving = [...rec.recurring, ...rec.merchants.map((m) => ({ ...m, perYear: m.total }))]
     .filter((x) => x.trend !== null && x.delta !== null && Math.abs(x.trend) >= 0.1 && Math.abs(x.delta) >= 150)
@@ -306,6 +306,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   </li>
                 ))}
               </ul>
+              {rec.comparedMonths > 0 ? <p className="muted small">Les pourcentages comparent les {rec.comparedMonths} derniers mois aux mêmes mois un an plus tôt.</p> : null}
               {rec.recurring.length > 8 ? <button className="morelink" onClick={() => setMore(!more)}>{more ? 'Réduire' : `Voir les ${rec.recurring.length - 8} autres`}</button> : null}
             </section>
           ) : null}
@@ -322,6 +323,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   </li>
                 ))}
               </ul>
+              {rec.comparedMonths > 0 ? <p className="muted small">Les pourcentages comparent les {rec.comparedMonths} derniers mois aux mêmes mois un an plus tôt.</p> : null}
               {rec.merchants.length > 8 ? <button className="morelink" onClick={() => setMore(!more)}>{more ? 'Réduire' : `Voir les ${rec.merchants.length - 8} autres`}</button> : null}
             </section>
           ) : null}
@@ -343,7 +345,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
 
           {tab === 'evolution' ? (
             <section>
-              <p className="sub">Ce qui a le plus changé par rapport aux 12 mois précédents, fournisseur par fournisseur.</p>
+              <p className="sub">{rec.comparedMonths > 0 ? `Les ${rec.comparedMonths} derniers mois comparés aux mêmes mois un an plus tôt, fournisseur par fournisseur. L’écart est ramené à l’année.` : 'Les relevés ne remontent pas assez loin pour comparer à l’année précédente.'}</p>
               {moving.length > 0 ? (
                 <ul className="rows">
                   {moving.map((x) => (
