@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Ledger } from './ledger';
 import { budgetView, labelTransactions, setBiens, storeStatements } from './budget';
 import { loadDemoBudget } from './demo-budget';
+import { recurringView } from './recurring';
 import { classify, isGenericPayee, signatureKey, type ParsedStatement } from './statements';
 
 const stmt = (account: string, rows: [string, string, number][]): ParsedStatement => ({
@@ -124,5 +125,36 @@ describe('versements de loyer en bloc', () => {
     expect(Math.round(dec.immo.Studio.loyers)).toBe(1000);
     expect(Math.round(dec.immo.Villa.loyers)).toBe(3000);
     expect(dec.immo['Non réparti']).toBeUndefined();
+  });
+});
+
+describe('ce qui revient, le quotidien, l’exceptionnel', () => {
+  const months = Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(2024, 9 + i, 5);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  it('sépare un abonnement, un commerçant et une grosse dépense, et compare à l’année précédente', () => {
+    const l = new Ledger(':memory:');
+    const rows: [string, string, number][] = [];
+    months.forEach((m, i) => {
+      rows.push([`${m}-05`, 'Salt Mobile SA, Avenue de Malley 2 Facture', i < 12 ? -90 : -110]);
+      rows.push([`${m}-10`, 'Coop-1115 Echallens, Echallens CH', -120 - (i % 3) * 40]);
+      rows.push([`${m}-18`, 'Coop-1115 Echallens, Echallens CH', -80]);
+    });
+    rows.push(['2026-03-12', 'Garage Exemple SA, Lausanne Réparation', -2400]);
+    storeStatements(l, [stmt('Compte', rows)], 'c.csv');
+    l.raw.exec("UPDATE budget_txs SET category = 'telecom' WHERE label LIKE 'Salt%'");
+    l.raw.exec("UPDATE budget_txs SET category = 'alimentation' WHERE label LIKE 'Coop%'");
+    l.raw.exec("UPDATE budget_txs SET category = 'vehicule' WHERE label LIKE 'Garage%'");
+    const v = recurringView(l, new Date('2026-10-15'));
+    const salt = v.recurring.find((r) => r.label.startsWith('Salt'))!;
+    expect(salt.cadence).toBe('mensuel');
+    expect(Math.round(salt.perYear)).toBe(1320);
+    expect(salt.lever).toBe(true);
+    expect(salt.trend).toBeCloseTo(110 / 90 - 1, 2);
+    expect(v.recurring.some((r) => r.label.startsWith('Coop'))).toBe(false);
+    expect(v.merchants[0].label).toMatch(/Coop/);
+    expect(v.oneOffs[0]).toMatchObject({ amount: 2400 });
+    expect(Math.round(v.totals.recurring + v.totals.daily + v.totals.exceptional)).toBe(Math.round(v.recurring.reduce((t, r) => t + r.perYear, 0) + v.merchants.reduce((t, m) => t + m.total, 0) + 2400));
   });
 });

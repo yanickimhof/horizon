@@ -7,6 +7,7 @@ import { classifyUnknown } from './statements-ai';
 import { proposeGap } from './statements-propose';
 import { addEstimate, setBiens, budgetView, labelTransactions, removeEstimate, setMinorUnknownToOther, storeStatements } from './budget';
 import { classifyStored } from './budget-ai';
+import { recurringView } from './recurring';
 import { mkdirSync } from 'node:fs';
 import { Ledger } from './ledger';
 import { loadDemo } from './demo';
@@ -113,6 +114,7 @@ function buildState(name: DbName, caseId: CaseId = 'base', access: { remote: boo
     docs: { chunks: l.chunkCount(), sources: l.sources().length },
     watch: { ...getWatch(l), last: lastWatch(l), running: watchProgress(l).running, step: watchProgress(l).step },
     budget: budgetView(l, new Date(), 80),
+    recurring: recurringView(l),
     llm: { provider: provider(l), localOnly: privacyMode(l) === 'local' },
     privacy: {
       mode: privacyMode(l),

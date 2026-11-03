@@ -30,6 +30,7 @@ export interface State {
   /** Passages indexés pour la recherche dans les documents. */
   watch: { dirs: string[]; auto: boolean; last: WatchStatus | null; running: boolean; step: string };
   budget: BudgetView;
+  recurring: RecurringView;
   docs: { chunks: number; sources: number };
   empty: boolean;
   snapshot: Snapshot;
@@ -184,3 +185,8 @@ export const fmt = {
 };
 
 export const RING_LABELS = ['3 mois', '1 an', '5 ans', '20 ans'];
+
+export interface RecurringItem { key: string; label: string; category: string; bien: string | null; cadence: 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel' | 'régulier'; perYear: number; perMonth: number; count: number; last: string; trend: number | null; delta: number | null; lever: boolean }
+export interface Merchant { key: string; label: string; category: string; total: number; count: number; trend: number | null; delta: number | null }
+export interface OneOff { label: string; date: string; amount: number; category: string; bien: string | null }
+export interface RecurringView { months: string[]; income: number; recurring: RecurringItem[]; merchants: Merchant[]; oneOffs: OneOff[]; totals: { recurring: number; daily: number; exceptional: number } }
