@@ -50,11 +50,13 @@ Le guide complet, pour quelqu'un qui découvre l'outil, est dans **[docs/GUIDE.m
 
 Captures prises sur des données de démonstration inventées (famille fictive chargée par `npm run dev`).
 
-![Budget](docs/screenshots/budget.jpg)
+![Ce qui revient](docs/screenshots/revient.jpg)
 
-![Tout voir: catégories, immobilier, travaux](docs/screenshots/depenses-par-categorie.jpg)
+![Évolution](docs/screenshots/evolution.jpg)
 
-- **Budget** (accueil): un chiffre (ce qui reste par mois) et trois constats écrits par l’outil (premier poste, plus gros changement, ce qui est à confirmer). « Voir où va l’argent » ouvre un schéma de flux des revenus vers les dépenses (un toucher donne le montant), puis les catégories et les biens. L’icône dossier ouvre les documents, les lignes à identifier, tes biens et les dépenses hors relevés. Période: un petit menu en haut.
+![Immobilier par bien](docs/screenshots/immobilier.jpg)
+
+- **Budget** (accueil): ce qui reste par mois, et la répartition des sorties en trois: ce qui revient (hypothèque, assurances, leasings, abonnements, classés par coût annuel), le quotidien (commerçants) et l'exceptionnel (impôts, travaux, grosses dépenses). Chaque fournisseur est comparé à lui-même sur la même durée un an plus tôt (onglet Évolution), avec les dépenses à comparer ou renégocier. L'onglet Immobilier détaille loyers, charges et net par bien. L'icône dossier ouvre les documents, les lignes à identifier, tes biens et les dépenses hors relevés.
 - **Importer**: lit un dossier ou des fichiers, masque les identifiants.
 - **À valider**: faits proposés par la lecture des documents, en attente de ton accord.
 - **Données**: tout ce qui est connu, modifiable, avec historique.
