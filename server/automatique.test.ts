@@ -3,6 +3,7 @@ import { Ledger } from './ledger';
 import { budgetView, labelTransactions, setBiens, storeStatements } from './budget';
 import { loadDemoBudget } from './demo-budget';
 import { recurringView } from './recurring';
+import { supplierOf } from './supplier';
 import { classify, isGenericPayee, signatureKey, type ParsedStatement } from './statements';
 
 const stmt = (account: string, rows: [string, string, number][]): ParsedStatement => ({
@@ -156,5 +157,27 @@ describe('ce qui revient, le quotidien, l’exceptionnel', () => {
     expect(v.merchants[0].label).toMatch(/Coop/);
     expect(v.oneOffs[0]).toMatchObject({ amount: 2400 });
     expect(Math.round(v.totals.recurring + v.totals.daily + v.totals.exceptional)).toBe(Math.round(v.recurring.reduce((t, r) => t + r.perYear, 0) + v.merchants.reduce((t, m) => t + m.total, 0) + 2400));
+  });
+});
+
+describe('un fournisseur se dit comme on le dit', () => {
+  const me = { selfNames: ['alex'] };
+  it('regroupe les magasins, adresses et numéros d’un même fournisseur', () => {
+    expect(supplierOf('Migros M Echallens, Echallens CH', me).name).toBe('Migros');
+    expect(supplierOf('Migros M Lausanne, Lausanne CH', me).name).toBe('Migros');
+    expect(supplierOf('Coop-1115 Echallen, Echallens CH', me).name).toBe('Coop');
+    expect(supplierOf('CSS Kranken-Versicherung AG, Tribschenstrasse 21, 6005 Luzern', me).name).toBe('CSS');
+    expect(supplierOf('CSS Kranken-Versicherung AG Hauptsitz, 6002 Luzern', me).name).toBe('CSS');
+    expect(supplierOf('Débit TWINT Parkingpay-TWINT 0400003359081185', me).name).toBe('Parkings');
+    expect(supplierOf('APCOA Parking Montbenon, Lausanne CH', me).name).toBe('Parkings');
+    expect(supplierOf('NOTION LABS, [TEL] IE', me).name).toBe('Notion');
+  });
+  it('lit la mention libre quand le bénéficiaire est soi-même', () => {
+    expect(supplierOf("Monsieur Alex Exemple &, Madame Sam Exemple, 1040 Echallens Débit d'intérêts Hypothèque SARON 70.232.040", { ...me, bien: 'Osiris' }).name).toBe('Intérêts hypothécaires, Osiris');
+    expect(supplierOf('Alex Exemple, Rue des Exemples 1, 1004 Lausanne Leasing: 504008 Leasing order no: [NUMERO]', me).name).toBe('Leasing 504008');
+    expect(supplierOf('Alex Exemple, Rue des Exemples 1, 1040 Echallens Belastung der Amortisation auf Prêt hypoth. taux fix', { ...me, bien: 'Osiris' }).name).toBe('Amortissement hypothécaire, Osiris');
+  });
+  it('nomme les charges de copropriété par bien', () => {
+    expect(supplierOf('PPE OSIRIS 7 A, p.a. Gérance SA, 1040 Echallens', { ...me, bien: 'Osiris' }).name).toBe('Charges PPE, Osiris');
   });
 });
