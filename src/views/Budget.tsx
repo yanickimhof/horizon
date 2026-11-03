@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownRight, ArrowLeft, ArrowUpRight, FolderOpen } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { AlertCircle, ArrowDownRight, ArrowLeft, ArrowUpRight, ChevronRight, FolderOpen, PieChart, TrendingDown, TrendingUp } from 'lucide-react';
 import { api, fmt, type Db, type State, type WatchStatus } from '../api';
 import '../budget.css';
 
@@ -246,6 +246,36 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       </optgroup>
     </select>
   );
+  const GROUPS: [string, string, string[]][] = [
+    ['Logement', '#534AB7', ['logement', 'travaux', 'maison', 'energie', 'telecom']],
+    ['Impôts et assurances', '#185FA5', ['impots', 'assurances', 'sante']],
+    ['Vie courante', '#0F6E56', ['alimentation', 'restaurants', 'vetements', 'quotidien', 'dons']],
+    ['Famille', '#993556', ['enfants', 'famille']],
+    ['Transports', '#5F5E5A', ['vehicule', 'transports']],
+    ['Loisirs et voyages', '#854F0B', ['loisirs', 'voyages', 'abonnements']],
+  ];
+  const groups = useMemo(() => {
+    const known = new Set(GROUPS.flatMap((g) => g[2]));
+    const mk = (name: string, color: string, keys: string[]) => {
+      const items = cats.filter((c) => keys.includes(c.key));
+      return { name, color, v: items.reduce((t, c) => t + c.avg, 0), items };
+    };
+    const rest = cats.filter((c) => !known.has(c.key));
+    return [...GROUPS.map(([n, c, k]) => mk(n, c, k)), { name: 'Autres', color: '#8a8a85', v: rest.reduce((t, c) => t + c.avg, 0), items: rest }].filter((g) => g.v > 0).sort((p, q) => q.v - p.v);
+  }, [cats]);
+  const [flowSel, setFlowSel] = useState('');
+  const flowTotal = Math.max(avgIncome, avgSpend, 1);
+  const flowNodes = [...groups.map((g) => ({ ...g })), ...(reste > 0 ? [{ name: 'Reste', color: '#639922', v: reste, items: [] as typeof cats }] : [])];
+  const flowCur = flowNodes.find((g) => g.name === flowSel);
+  const insights = (() => {
+    const out: { icon: 'up' | 'down' | 'top' | 'todo' | 'once'; title: string; sub: string; go: 'all' | 'todo' }[] = [];
+    if (cats[0] && avgIncome > 0) out.push({ icon: 'top', title: `${LABEL[cats[0].key] ?? cats[0].key} est ton premier poste`, sub: `${Math.round((cats[0].avg / avgIncome) * 100)} % de tes revenus`, go: 'all' });
+    const moved = cats.filter((c) => c.trend !== null && c.prevAvg !== null && Math.abs(c.trend) > 0.15 && Math.abs(c.avg - c.prevAvg) > 50).sort((p, q) => Math.abs(q.avg - (q.prevAvg ?? 0)) - Math.abs(p.avg - (p.prevAvg ?? 0)))[0];
+    if (moved && moved.trend !== null) out.push({ icon: moved.trend > 0 ? 'up' : 'down', title: `${LABEL[moved.key] ?? moved.key} en ${moved.trend > 0 ? 'hausse' : 'baisse'}`, sub: `${moved.trend > 0 ? '+' : ''}${Math.round(moved.trend * 100)} % par rapport ${prevLabel}`, go: 'all' });
+    if (b.excluded.length > 0) out.push({ icon: 'once', title: b.excluded.length > 1 ? `${b.excluded.length} versements uniques non comptés` : 'Un versement unique non compté', sub: 'À confirmer', go: 'todo' });
+    else if (b.unknown.count > 0) out.push({ icon: 'todo', title: `${plural(b.unknown.count, 'ligne')} à identifier`, sub: 'Une minute', go: 'todo' });
+    return out.slice(0, 3);
+  })();
   const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k)])];
   const maxCat = Math.max(1, ...cats.map((c) => (catView === 'total' ? c.total : c.avg)));
 
@@ -262,26 +292,64 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             <p className="unit">Reste{used.length > 1 ? ' par mois' : ''}</p>
             <p className={'big xl' + (reste < 0 ? ' neg' : '')}>{money(reste)}</p>
           </section>
-          <ul className="toplist">
-            {topCats.map((c) => (
-              <li key={c.key}><span>{LABEL[c.key] ?? c.key}</span><span>{money(c.avg)}</span></li>
+          <div className="insights">
+            {insights.map((i, n) => (
+              <button key={n} className="insight" onClick={() => setView(i.go)}>
+                {i.icon === 'up' ? <TrendingUp size={20} strokeWidth={1.6} color="#c4452d" /> : i.icon === 'down' ? <TrendingDown size={20} strokeWidth={1.6} color="#2f7d4f" /> : i.icon === 'top' ? <PieChart size={20} strokeWidth={1.6} color="#534AB7" /> : <AlertCircle size={20} strokeWidth={1.6} color="#b7791f" />}
+                <span className="t">{i.title}<small>{i.sub}</small></span>
+                <ChevronRight size={16} strokeWidth={1.6} />
+              </button>
             ))}
-          </ul>
-          <button className="morelink" onClick={() => setView('all')}>Tout voir</button>
+          </div>
+          <button className="morelink" onClick={() => setView('all')}>Voir où va l’argent</button>
         </>
       ) : null}
 
       {view === 'all' && last ? (
         <>
-          <div className="allhead">
-            <span className="muted small">{periodLabel}</span>
-            {used.length > 1 ? (
-              <div className="seg" role="tablist" aria-label="Affichage">
-                <button className={catView === 'moy' ? 'on' : ''} onClick={() => setCatView('moy')}>Par mois</button>
-                <button className={catView === 'total' ? 'on' : ''} onClick={() => setCatView('total')}>Total</button>
-              </div>
-            ) : null}
+          <svg className="flow" viewBox="0 0 400 300" role="img" aria-label="Flux des revenus vers les dépenses et le reste">
+            {(() => {
+              const H = 286, k = H / flowTotal, xl = 70, xr = 250;
+              let yl = 7;
+              let yr = 7;
+              const els: ReactElement[] = [];
+              flowNodes.forEach((g, i) => {
+                const h = Math.max(g.v * k, 2);
+                const r = Math.min(avgIncome, flowTotal) / flowTotal;
+                const hl = h * r;
+                const yl0 = yl;
+                const y2 = yr;
+                const y1 = yl0;
+                els.push(<path key={g.name} d={`M${xl} ${y1} C${xl + 80} ${y1} ${xr - 80} ${y2} ${xr} ${y2} L${xr} ${y2 + h} C${xr - 80} ${y2 + h} ${xl + 80} ${y1 + hl} ${xl} ${y1 + hl} Z`} fill={g.color} opacity={flowSel === g.name ? 0.6 : 0.3} onClick={() => setFlowSel(g.name)} style={{ cursor: 'pointer' }} />);
+                els.push(<rect key={g.name + 'r'} x={xr} y={y2} width={6} height={h} rx={2} fill={g.color} />);
+                els.push(<text key={g.name + 't'} x={xr + 12} y={y2 + Math.max(h / 2, 7) + 4} className="flowlab" onClick={() => setFlowSel(g.name)} style={{ cursor: 'pointer', fontWeight: flowSel === g.name ? 600 : 400 }}>{g.name}</text>);
+                yr += h + 3;
+                yl += hl;
+              });
+              els.push(<rect key="src" x={xl - 6} y={7} width={6} height={Math.min(avgIncome, flowTotal) * k} rx={2} fill="#534AB7" />);
+              els.push(<text key="srct" x={xl - 12} y={7 + (Math.min(avgIncome, flowTotal) * k) / 2 + 4} textAnchor="end" className="flowlab">Revenus</text>);
+              return els;
+            })()}
+          </svg>
+          <div className="flowdet">
+            {flowCur ? (
+              <>
+                <div className="fh"><b>{flowCur.name}</b><span>{money(flowCur.v)}{used.length > 1 ? ' par mois' : ''}</span></div>
+                {flowCur.items.length > 0 ? <ul className="muted small">{flowCur.items.map((c) => <li key={c.key} className="fi"><span>{LABEL[c.key] ?? c.key}</span><span>{money(c.avg)}</span></li>)}</ul> : null}
+              </>
+            ) : <p className="muted small center">Touche un flux pour voir le montant.</p>}
           </div>
+          <details className="drawer">
+            <summary>Toutes les catégories</summary>
+            <div className="allhead">
+              <span className="muted small">{periodLabel}</span>
+              {used.length > 1 ? (
+                <div className="seg" role="tablist" aria-label="Affichage">
+                  <button className={catView === 'moy' ? 'on' : ''} onClick={() => setCatView('moy')}>Par mois</button>
+                  <button className={catView === 'total' ? 'on' : ''} onClick={() => setCatView('total')}>Total</button>
+                </div>
+              ) : null}
+            </div>
           <ul className="catlist">
             {cats.map((c) => {
               const v = catView === 'total' ? c.total : c.avg;
@@ -295,6 +363,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
               );
             })}
           </ul>
+          </details>
           {prevYear.length > 0 ? <p className="muted small">Variation par rapport {prevLabel}, affichée au-dessus de 15 %.</p> : null}
           {bienNames.length > 0 ? (
             <>
