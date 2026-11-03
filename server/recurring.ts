@@ -76,18 +76,16 @@ export interface CategoryMove {
   prior: number;
 }
 
-export interface Change {
+export interface Avoidable {
   key: string;
   label: string;
-  kind: 'prix' | 'nouveau' | 'arret';
-  /** Montant d'un paiement avant / après (prix), ou le montant courant (nouveau, arrêt). */
-  from: number | null;
-  to: number | null;
-  cadence: string;
-  /** Mois (AAAA-MM) du premier paiement au nouveau tarif, du premier paiement (nouveau) ou du dernier (arrêt). */
-  since: string;
-  /** Effet sur un an, en francs (positif = coûte plus). */
-  yearly: number;
+  category: string;
+  /** abonnement: paiement récurrent; frais: frais de banque; habitude: même endroit, achats répétés. */
+  kind: 'abonnement' | 'frais' | 'habitude';
+  perYear: number;
+  count: number;
+  perMonth: number;
+  bases: string[];
 }
 
 export interface RecurringView {
@@ -110,8 +108,8 @@ export interface RecurringView {
   compare: { income: number | null; spend: number | null; incomeNow: number | null; spendNow: number | null };
   /** Les mois de la période qui ont un jumeau un an plus tôt: ce sont eux, et eux seuls, qui servent aux comparaisons. */
   pairMonths: string[];
-  /** Vrais changements de tarif des charges fixes (prime, abonnement), nouveaux abonnements et arrêts. */
-  changes: Change[];
+  /** Ce qui pourrait être évité: abonnements, frais de banque, achats répétés au même endroit. */
+  avoidable: Avoidable[];
   recurring: RecurringItem[];
   merchants: Merchant[];
   oneOffs: OneOff[];
@@ -132,6 +130,9 @@ const NOT_SPEND = new Set(['interne', 'epargne', 'revenu', 'exceptionnel', 'doub
 // Un montant qui varie beaucoup d'un mois à l'autre (intérêts semestriels, primes) reste un engagement pour ces catégories.
 const LOOSE = new Set(['logement', 'assurances', 'energie', 'telecom', 'banque', 'famille', 'enfants']);
 const FIXED = new Set(['logement', 'assurances', 'energie', 'telecom', 'abonnements', 'banque', 'vehicule', 'enfants', 'famille']);
+// Ce qu'on peut vraiment se demander d'éviter: abonnements et frais; achats répétés dans les mêmes commerces de plaisir ou de confort.
+const AVOIDABLE_FIXED = new Set(['abonnements', 'banque']);
+const AVOIDABLE_HABIT = new Set(['restaurants', 'loisirs', 'vetements', 'maison', 'quotidien', 'autre', 'abonnements']);
 const LEVER = new Set(['assurances', 'telecom', 'abonnements', 'banque', 'energie']);
 const ONE_OFF_CATEGORIES = new Set(['impots', 'travaux']);
 
@@ -163,7 +164,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
 
   const all = [...new Set(rows.map((r) => r.date.slice(0, 7)))].filter((m) => m < current).sort();
   const last = all[all.length - 1];
-  const empty: RecurringView = { categories: [], works: [], months: [], comparedMonths: 0, priorMonths: [], income: 0, incomeBy: [], incomeOnce: 0, compare: { income: null, spend: null, incomeNow: null, spendNow: null }, pairMonths: [], changes: [], recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0, works: 0 } };
+  const empty: RecurringView = { categories: [], works: [], months: [], comparedMonths: 0, priorMonths: [], income: 0, incomeBy: [], incomeOnce: 0, compare: { income: null, spend: null, incomeNow: null, spendNow: null }, pairMonths: [], avoidable: [], recurring: [], merchants: [], oneOffs: [], totals: { recurring: 0, daily: 0, exceptional: 0, works: 0 } };
   if (!last) return empty;
   // La période choisie: 12 derniers mois, une année (à ce jour si elle n'est pas finie) ou un mois.
   const range = period.match(/^(\d{4}-\d{2})\.\.(\d{4}-\d{2})$/);
@@ -257,7 +258,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   const merchants: Merchant[] = [];
   const oneOffs: OneOff[] = [];
   const works: OneOff[] = [];
-  const changes: Change[] = [];
+  const avoidable: Avoidable[] = [];
   const totals = { recurring: 0, daily: 0, exceptional: 0, works: 0 };
 
   for (const g of groups.values()) {
@@ -292,28 +293,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
     if (isFixed || isStable || isAnnual) {
       recurring.push({ key: g.key, label: g.label, category, bien, cadence: cadenceOf(monthsSet), perYear: amount, perMonth: amount / sel.length, count: chosen.length, last: chosen.map((r) => r.date).sort().pop() as string, trend, delta, prior: priorScaled, now: nowPair, lever: LEVER.has(category), lines: toLines(chosen), bases: [...g.bases] });
       totals.recurring += amount;
-      // Tarif: on lit les paiements un par un, en séries de montants voisins.
-      const pays = g.rows.filter((r) => monthIndex(r.date.slice(0, 7)) <= end && r.amount < 0).sort((a, b) => a.date.localeCompare(b.date));
-      const runs: { amount: number; n: number; first: string }[] = [];
-      for (const r of pays) {
-        const v = -toChf(r.amount, r.currency);
-        const last = runs[runs.length - 1];
-        if (last && Math.abs(v - last.amount) <= Math.max(1, last.amount * 0.03)) last.n++;
-        else runs.push({ amount: v, n: 1, first: r.date.slice(0, 7) });
-      }
-      const cad = cadenceOf(monthsSet);
-      const ppy = cad === 'mensuel' ? 12 : cad === 'trimestriel' ? 4 : cad === 'semestriel' ? 2 : cad === 'annuel' ? 1 : 12;
-      const need = ppy >= 12 ? 3 : 2;
-      const cur = runs[runs.length - 1];
-      const before = runs[runs.length - 2];
-      const tariffCat = LEVER.has(category) && category !== 'energie';
-      if (tariffCat && cur && before && cur.n >= need && before.n >= need && winMonths.length >= 2 && cur.amount >= 5 && cur.amount / before.amount >= 0.6 && cur.amount / before.amount <= 1.7 && Math.abs(cur.amount - before.amount) >= Math.max(2, before.amount * 0.04) && monthIndex(cur.first) > end - 12) {
-        changes.push({ key: g.key, label: g.label, kind: 'prix', from: before.amount, to: cur.amount, cadence: cad, since: cur.first, yearly: (cur.amount - before.amount) * ppy });
-      } else if (tariffCat && runs.length === 1 && pays.length >= 3 && monthIndex(pays[0].date.slice(0, 7)) > end - 5 && cur.amount >= 5) {
-        changes.push({ key: g.key, label: g.label, kind: 'nouveau', from: null, to: cur.amount, cadence: cad, since: pays[0].date.slice(0, 7), yearly: cur.amount * ppy });
-      } else if (tariffCat && pays.length >= 4 && ppy >= 12 && monthIndex(pays[pays.length - 1].date.slice(0, 7)) < end - 1 && monthIndex(pays[pays.length - 1].date.slice(0, 7)) > end - 12 && cur.amount >= 5) {
-        changes.push({ key: g.key, label: g.label, kind: 'arret', from: cur.amount, to: null, cadence: cad, since: pays[pays.length - 1].date.slice(0, 7), yearly: -cur.amount * ppy });
-      }
+      if (AVOIDABLE_FIXED.has(category) && !generic) avoidable.push({ key: g.key, label: g.label, category, kind: category === 'banque' ? 'frais' : 'abonnement', perYear: amount, count: chosen.length, perMonth: amount / sel.length, bases: [...g.bases] });
       continue;
     }
     // Le reste. Un travail ou un frais lié à un bien va dans l'immobilier. Un impôt ou une grosse dépense inhabituelle est exceptionnel.
@@ -337,6 +317,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
       }
     }
     totals.daily += dailyTotal;
+    if (!generic && AVOIDABLE_HABIT.has(category) && dailyRows.length >= 5 && dailyTotal >= 150 * Math.min(1, sel.length / 12)) avoidable.push({ key: g.key, label: g.label, category, kind: 'habitude', perYear: dailyTotal, count: dailyRows.length, perMonth: dailyTotal / sel.length, bases: [...g.bases] });
     if (dailyTotal >= 100 * Math.min(1, sel.length / 12)) merchants.push({ key: g.key, label: g.label, category, total: dailyTotal, count: dailyRows.length, trend, delta, prior: priorScaled, now: nowPair, lines: toLines(dailyRows), bases: [...g.bases] });
   }
 
@@ -420,7 +401,7 @@ export function recurringView(l: Ledger, now: Date = new Date(), period = '12'):
   merchants.sort((a, b) => b.total - a.total);
   oneOffs.sort((a, b) => b.amount - a.amount);
   works.sort((a, b) => b.amount - a.amount);
-  return { categories: categories.slice(0, 8), works, months, comparedMonths: priorCovered ? pairMonths.length : 0, priorMonths: priorCovered ? [...priorSet].sort() : [], pairMonths: priorCovered ? pairMonths : [], income, incomeBy, incomeOnce, compare, changes: changes.sort((a, b) => Math.abs(b.yearly) - Math.abs(a.yearly)).slice(0, 8), recurring, merchants, oneOffs, totals };
+  return { categories: categories.slice(0, 8), works, months, comparedMonths: priorCovered ? pairMonths.length : 0, priorMonths: priorCovered ? [...priorSet].sort() : [], pairMonths: priorCovered ? pairMonths : [], income, incomeBy, incomeOnce, compare, avoidable: avoidable.sort((a, b) => b.perYear - a.perYear).slice(0, 10), recurring, merchants, oneOffs, totals };
 }
 
 export interface Fournisseur {
