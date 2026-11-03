@@ -195,4 +195,4 @@ export interface OneOff { label: string; date: string; amount: number; category:
 export interface CategoryMove { category: string; perYear: number; trend: number; delta: number }
 export interface RecurringView { categories: CategoryMove[]; months: string[]; comparedMonths: number; income: number; recurring: RecurringItem[]; merchants: Merchant[]; oneOffs: OneOff[]; totals: { recurring: number; daily: number; exceptional: number } }
 
-export interface Decompte { bien: string | null; from: string; to: string; total: number; lines: { label: string; amount: number }[]; solde: number | null; paid: number }
+export interface Decompte { bien: string | null; from: string; to: string; total: number; lines: { label: string; amount: number }[]; solde: number | null; paid: number; settled: string | null }
