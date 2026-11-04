@@ -400,12 +400,25 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const tlMax = Math.max(1, ...tl.flatMap((m) => [m.spend, m.income]));
   const selMonths = new Set(rec.months);
   const [anchor, setAnchor] = useState('');
+  // Sans clavier (téléphone, tablette, webapp), « Plage » remplace la touche Maj: un premier toucher fixe le début, le second la fin.
+  const [rangeMode, setRangeMode] = useState(false);
   const pickMonth = (e: MouseEvent, m: string) => {
-    if (e.shiftKey && anchor && anchor !== m) {
+    if (rangeMode) {
+      if (!anchor) {
+        setAnchor(m);
+        setPeriod(m);
+      } else {
+        const [a, z] = anchor <= m ? [anchor, m] : [m, anchor];
+        setPeriod(a === z ? a : `${a}..${z}`);
+        setAnchor('');
+        setRangeMode(false);
+      }
+    } else if (e.shiftKey && anchor && anchor !== m) {
       const [a, z] = anchor < m ? [anchor, m] : [m, anchor];
       setPeriod(`${a}..${z}`);
     } else if (period === m) {
       setPeriod('12');
+      setAnchor('');
     } else {
       setPeriod(m);
       setAnchor(m);
@@ -424,11 +437,12 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       </div>
       <div className="tlyears">
         {tl.map((m, i) => (
-          <span key={m.month}>{m.month.slice(5) === '01' || (i === 0 && (tl.findIndex((x) => x.month.slice(5) === '01') < 0 || tl.findIndex((x) => x.month.slice(5) === '01') >= 4)) ? <button onClick={() => { setPeriod(m.month.slice(0, 4)); setOpen(''); setMore(false); }}>{m.month.slice(0, 4)}</button> : null}</span>
+          <span key={m.month}>{m.month.slice(5) === '01' || (i === 0 && (tl.findIndex((x) => x.month.slice(5) === '01') < 0 || tl.findIndex((x) => x.month.slice(5) === '01') >= 4)) ? <button onClick={() => { setPeriod(m.month.slice(0, 4)); setAnchor(''); setRangeMode(false); setOpen(''); setMore(false); }}>{m.month.slice(0, 4)}</button> : null}</span>
         ))}
       </div>
       <div className="tllabel">
-        <button className={period === '12' ? 'on' : ''} onClick={() => { setPeriod('12'); setOpen(''); setMore(false); }}>12 mois</button>
+        <button className={period === '12' ? 'on' : ''} onClick={() => { setPeriod('12'); setAnchor(''); setRangeMode(false); setOpen(''); setMore(false); }}>12 mois</button>
+        <button className={'rng' + (rangeMode ? ' on' : '')} aria-pressed={rangeMode} onClick={() => { setRangeMode(!rangeMode); setAnchor(''); }} title="Choisir un début puis une fin">{rangeMode ? (anchor ? 'Choisis la fin' : 'Choisis le début') : 'Plage'}</button>
         <span>{periodLabel}</span>
       </div>
       <p className="tlcap"><span><b style={{ background: 'var(--pos)' }} />Gains</span><span><b style={{ background: 'var(--c-cash)' }} />Dépenses</span></p>

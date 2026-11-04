@@ -205,6 +205,9 @@
 .tllabel { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 13px; color: var(--ink-2); }
 .tllabel button { all: unset; cursor: pointer; padding: 3px 10px; border-radius: 999px; background: var(--track); font-size: 12px; }
 .tllabel button.on { background: var(--ink); color: var(--bg); }
+.tllabel button + button { margin-left: 6px; }
+.tllabel > span { margin-left: auto; text-align: right; }
+.tlbars button, .tlyears button, .tllabel button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .listtools { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 6px; }
 .listtools .seg button { padding: 4px 10px; font-size: 12px; }
 .chg { display: block; font-size: 12px; margin-top: 2px; }
