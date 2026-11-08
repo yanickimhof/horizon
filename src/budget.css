@@ -289,3 +289,43 @@ table.cmp tr.tot td { font-weight: 500; }
 .pair .pb i.a { background: var(--line); border: 1px solid var(--ink-2); box-sizing: border-box; opacity: .7; }
 .pair .pb i.b { background: var(--c-cash); }
 .pair .pv { display: flex; flex-direction: column; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Palette par catégorie (utilisée par tous les graphiques) */
+.budget { --k1: #3f6fb5; --k2: #2a9d8f; --k3: #d9a21b; --k4: #e07a3f; --k5: #c8503f; --k6: #8a63b5; --k7: #c2608f; --k8: #5a9e4b; --k9: #7b8794; --k10: #9a7152; }
+@media (prefers-color-scheme: dark) {
+  .budget { --k1: #6b98d6; --k2: #4cbcae; --k3: #edbb3e; --k4: #f0975f; --k5: #e57a6a; --k6: #ab87d3; --k7: #dd86b0; --k8: #7fc06f; --k9: #9aa5b1; --k10: #bb9573; }
+}
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
+
+/* Graphique du haut: barres = dépenses, trait = gains; glisser pour choisir une plage */
+.tlbars { touch-action: none; user-select: none; -webkit-user-select: none; }
+.tlbars button { position: relative; display: block; }
+.tlbars button i.dep { position: absolute; left: 0; right: 0; bottom: 0; flex: none; border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--ink) 16%, transparent); }
+.tlbars button:hover i.dep { background: color-mix(in srgb, var(--ink) 30%, transparent); }
+.tlbars button i.tick { position: absolute; left: -1px; right: -1px; height: 2px; flex: none; border-radius: 1px; background: color-mix(in srgb, var(--ink) 38%, transparent); }
+.tlbars button.on i.dep { background: var(--k1); }
+.tlbars button.on i.tick { background: var(--pos); }
+.tlmonths { display: flex; gap: 3px; margin-top: 3px; font-size: 10px; color: var(--ink-2); }
+.tlmonths span { flex: 1; text-align: center; }
+.tllabel { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.tllabel > span { margin-left: auto; font-size: 13px; color: var(--ink-2); }
+.tlcap { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin: 8px 0 0; }
+.tlcap span { display: inline-flex; align-items: center; gap: 6px; }
+.tlcap b.bar { width: 10px; height: 10px; border-radius: 2px; background: var(--k1); }
+.tlcap b.line { width: 12px; height: 2px; background: var(--pos); }
+.tlcap .hint { margin-left: auto; font-style: italic; }
+.legend i.lg.b { background: var(--ink); }
+
+/* Refonte 2026-11-08: bascule mois/année, flux, arbre de postes */
+.tllabel .unit { display: inline-flex; gap: 2px; margin-left: auto; margin-right: 10px; }
+.tllabel .unit button { all: unset; cursor: pointer; padding: 3px 6px; border-radius: 6px; background: transparent; color: var(--ink-2); display: inline-flex; }
+.tllabel .unit button.on { background: var(--track); color: var(--ink); }
+.tllabel > span { margin-left: 0; }
+.flow { width: 100%; height: auto; display: block; margin: 8px 0 4px; }
+.flow text { fill: var(--ink); font-size: 13px; }
+.flow text.sub { fill: var(--ink-2); font-size: 12px; }
+.gbar { display: block; height: 3px; background: var(--track); border-radius: 2px; margin: -6px 0 10px; }
+.gbar i { display: block; height: 100%; border-radius: 2px; }
+.cmphead { font-size: 16px; margin: 4px 0 2px; font-weight: 500; }
+.cmp th small { display: block; font-weight: 400; color: var(--ink-2); font-size: 11px; }
+.mini li.net { font-weight: 500; border-top: 1px solid var(--line); }
