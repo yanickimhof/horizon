@@ -31,12 +31,18 @@ export const COACH_RULES: string[] = [
   'Si la personne exprime de la détresse financière, réponds avec calme et de façon pratique, et mentionne l’existence de services de conseil en budget et en désendettement.',
 ];
 
-export function buildCoachSystem(context: string, passages = ''): string {
+/** Ajouté seulement avec un modèle local: les montants ne quittent pas la machine. */
+export const COACH_LOCAL_RULE =
+  'CHIFFRES DU MODÈLE fournis ci-dessous (modèle local, rien ne sort de la machine): pour une question de montant (fonds propres, dette, valeur, loyers), réponds d’abord avec ces chiffres, qui priment sur les extraits de documents, puis cite les extraits comme sources. Donne le résultat en une phrase claire avant tout commentaire, indique la fourchette quand elle existe et dis ce qui reste une estimation.';
+
+export function buildCoachSystem(context: string, passages = '', figures = ''): string {
   return [
     ...COACH_RULES,
+    ...(figures ? [COACH_LOCAL_RULE] : []),
     '',
     'DONNÉES DU FOYER',
     context,
+    ...(figures ? ['', 'CHIFFRES DU MODÈLE (en CHF)', figures] : []),
     ...(passages ? ['', 'EXTRAITS DE DOCUMENTS (masqués, contiennent de vrais montants)', passages] : []),
   ].join('\n');
 }
