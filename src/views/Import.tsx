@@ -51,14 +51,6 @@ export function Import({ db, state, setState, reveal, goto }: { db: Db; state: S
     }
   };
 
-  const setAuto = async (auto: boolean) => {
-    setErr('');
-    try {
-      setState(await api.watchSet(db, { dirs: list, auto }));
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-  };
 
   const taxYears = (country: string) =>
     [...new Set(state.sources.filter((s) => s.meta?.type === 'tax-return' && s.meta?.country === country && s.meta?.year).map((s) => s.meta!.year!))].sort();
@@ -76,10 +68,6 @@ export function Import({ db, state, setState, reveal, goto }: { db: Db; state: S
         <textarea value={dirs} onChange={(e) => setDirs(e.target.value)} rows={2} placeholder="/Users/toi/Documents/Horizon" aria-label="Dossier des documents, un chemin par ligne" />
         <div className="actions">
           <button className="btn primary" onClick={run} disabled={busy || list.length === 0}>{busy ? 'Analyse…' : 'Analyser maintenant'}</button>
-          <label className="auto">
-            <button type="button" role="switch" aria-checked={state.watch.auto} aria-label="Contrôle automatique" className={'switch' + (state.watch.auto ? ' on' : '')} onClick={() => setAuto(!state.watch.auto)} disabled={list.length === 0}><i /></button>
-            <span>Contrôle automatique des nouveaux documents</span>
-          </label>
         </div>
       </div>
       <p className="muted small">

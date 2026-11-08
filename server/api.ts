@@ -14,7 +14,7 @@ import { Ledger } from './ledger';
 import { loadDemo } from './demo';
 import { scanDirectories } from './intake';
 import { formatPassages, retrieve, type Passage } from './rag';
-import { getWatch, lastWatch, setWatch, startRun, startWatcher, watchProgress } from './watch';
+import { getWatch, lastWatch, setWatch, startRun, watchProgress } from './watch';
 import { EgressBlocked, consentGranted, envLocked, getTerms, guardedFetch, privacyMode, restoreLocal, setTerms, type Consent } from './egress';
 import { updateMarket } from './market';
 import { buildCoachSystem } from './coach';
@@ -514,5 +514,5 @@ export async function apiMiddleware(req: IncomingMessage, res: ServerResponse, n
   }
 }
 
-// Contrôle automatique des dossiers de documents, tant que le serveur tourne et que l'utilisateur l'a activé.
-startWatcher(() => ledger('real'));
+// Plus de contrôle automatique: la lecture des documents se lance à la main (bouton « Analyser maintenant »).
+// Le contrôle périodique relisait en boucle les documents sans résultat et consommait des appels d'API inutiles.
