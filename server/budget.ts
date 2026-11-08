@@ -519,7 +519,8 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
       e.byCategory.autre = (e.byCategory.autre ?? 0) - chf;
     } else if (r.category === 'revenu' && chf > 0) e.income += chf;
     else if (r.category === 'exceptionnel' && chf > 0) e.exceptional += chf;
-    else if (r.category === 'epargne' && chf < 0) e.saved += -chf;
+    // Épargne nette: un versement augmente, un remboursement (3e pilier versé en trop, parts sociales) diminue.
+    else if (r.category === 'epargne') e.saved += -chf;
     else if (!NOT_SPEND.has(r.category)) {
       const isCardDebit = r.category === 'carte' && cardMonths.has(m);
       if (!isCardDebit) {

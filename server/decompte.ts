@@ -80,7 +80,20 @@ export function decomptesView(l: Ledger): Decompte[] {
     }
     for (const x of parseSolde(text)) soldes.push({ ...x, bien });
   }
-  const txs = l.raw.prepare("SELECT date, amount, label, bien FROM budget_txs WHERE amount < 0 AND label LIKE '%PPE%'").all() as { date: string; amount: number; label: string; bien: string | null }[];
+  // Mot entier « PPE »: « Rappel », « Philippe » ou « Giuseppe » ne sont pas des paiements de copropriété.
+  const txs = (l.raw.prepare('SELECT date, amount, label, bien FROM budget_txs WHERE amount < 0').all() as { date: string; amount: number; label: string; bien: string | null }[]).filter((t) => /\bPPE\b/i.test(t.label));
+  // Un paiement qui couvre plusieurs trimestres d'un coup (réglage « decompte.affectations »: { date, amount, periodes: [dates] }):
+  // la i-ème ligne identique est rattachée à la date de la période qu'elle couvre, pas à celle du virement.
+  try {
+    const aff = JSON.parse(l.getSetting('decompte.affectations') || '[]') as { date: string; amount: number; periodes: string[] }[];
+    for (const a of aff) {
+      txs.filter((t) => t.date === a.date && Math.abs(-t.amount - a.amount) < 0.01).forEach((t, i) => {
+        if (a.periodes[i]) t.date = a.periodes[i];
+      });
+    }
+  } catch {
+    // Réglage illisible: les paiements gardent leur date.
+  }
   const list = [...byKey.values()];
   for (const d of list) {
     d.solde = soldes.find((x) => x.from === d.from && x.to === d.to && (x.bien === d.bien || x.bien === null || d.bien === null))?.solde ?? null;
