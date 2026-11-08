@@ -180,3 +180,19 @@ describe('revenus exceptionnels automatiques', () => {
     expect(view.months[0].byCategory.autre).toBeCloseTo(9, 5);
   });
 });
+
+describe('remboursements et épargne nette', () => {
+  it('range un remboursement de la PPE ou d’un achat en ligne dans la dépense, pas dans le revenu', () => {
+    expect(classify('PPE OSIRIS BATIMENT 7A, CHEMIN DU CREPON, 1040 ECHALLENS, [IBAN] FA 261167 Du 16.07.2026', 55.9).category).toBe('maison');
+    expect(classify('Crédit TWINT Digitec Galaxus 0400004412241202', 55.9).category).toBe('maison');
+    expect(classify('Salaire ACME SARL', 5000).category).toBe('revenu');
+  });
+
+  it('déduit de l’épargne un remboursement de 3e pilier', () => {
+    const l = new Ledger(':memory:');
+    storeStatements(l, [stmt('Salaire', [['2026-03-05', 'VZ 3e pilier versement', -7258], ['2026-09-05', 'VZ 3e pilier remboursement', 3910]])]);
+    const view = budgetView(l, new Date('2026-10-15'));
+    expect(view.months.find((m) => m.month === '2026-03')!.saved).toBe(7258);
+    expect(view.months.find((m) => m.month === '2026-09')!.saved).toBe(-3910);
+  });
+});

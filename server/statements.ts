@@ -93,13 +93,15 @@ const num = (s: string): number | null => {
 };
 
 /** Règles par défaut, de la plus précise à la plus large. Le premier motif qui correspond l'emporte. */
-const RULES: { category: string; re: RegExp; debitOnly?: boolean }[] = [
+const RULES: { category: string; re: RegExp; debitOnly?: boolean; creditOnly?: boolean }[] = [
   { category: 'epargne', re: /parts?(?:\(s\))? sociales?(?:\(s\))?|soci[ée]tariat/i },
   { category: 'banque', re: /d[ée]bit des taxes|prix du paquet|taxe annuelle|tenue de compte|compartiment de coffre|frais de compte/i, debitOnly: true },
   { category: 'especes', re: /retrait au bancomat|retrait d.esp|bestellung bargeld|commande de devises|change de devises/i, debitOnly: true },
   { category: 'interne', re: /d[ée]p[oô]t au bancomat|distributeur automatique - versement/i },
   { category: 'interne', re: /hypoth[eè]ques?\s*:\s*chf/i },
   { category: 'interne', re: /^votre paiement\b.*merci/i },
+  // Un remboursement reçu (petit matériel avancé pour la PPE, retour d'un achat en ligne) vient en déduction de la dépense, pas du revenu.
+  { category: 'maison', re: /^PPE\b.*\bFA\b|digitec|galaxus/i, creditOnly: true },
   { category: 'epargne', re: /amortisation|roboforex|roboM\//i },
   { category: 'epargne', re: /3e? pilier|\b3a\b|pilier 3|libre passage|rachat|\bepl\b|fds? prev|fonds? de pr[ée]voyance|pr[ée]voyance/i },
   { category: 'impots', re: /office des imp|service des imp|etat de vaud|administration fiscale|acomptes? d.imp|imp[oô]ts?|^ville de |^commune d|steueramt/i },
@@ -130,6 +132,7 @@ const RULES: { category: string; re: RegExp; debitOnly?: boolean }[] = [
 export function classify(label: string, amount: number): { category: string; source: Tx['source'] } {
   for (const r of RULES) {
     if (r.debitOnly && amount > 0) continue;
+    if (r.creditOnly && amount <= 0) continue;
     if (r.re.test(label)) return { category: r.category, source: 'regle' };
   }
   if (amount > 0) return { category: 'revenu', source: 'regle' };
