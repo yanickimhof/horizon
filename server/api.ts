@@ -332,7 +332,9 @@ async function coach(name: DbName, message: string, history: { role: 'user' | 'a
       });
       const j = (await r.json()) as any;
       if (!r.ok) return { status: 502, body: { error: j?.error ?? 'Le modèle local ne répond pas' } };
-      return { status: 200, body: { text: restoreLocal(String(j?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim(), l), ...meta } };
+      const local = restoreLocal(String(j?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim(), l);
+      if (!local) return { status: 502, body: { error: 'Le modèle local n’a rien répondu. Essaie un modèle plus grand (HORIZON_OLLAMA_MODEL) ou reformule la question.' } };
+      return { status: 200, body: { text: local, ...meta } };
     }
     const out = await claude(l, {
       purpose: 'coach',
@@ -342,8 +344,9 @@ async function coach(name: DbName, message: string, history: { role: 'user' | 'a
       maxTokens: 700,
       summary: found.length ? `Question au coach: proportions et ${found.length} extrait${found.length > 1 ? 's' : ''} de documents (avec montants)` : `Question au coach: proportions de ${l.current().length} lignes, sans montants`,
     });
-    const text = out.text;
-    return { status: 200, body: { text: restoreLocal(text, l), ...meta } };
+    const text = restoreLocal(out.text, l).trim();
+    if (!text) return { status: 502, body: { error: 'Le modèle n’a rien répondu. Réessaie.' } };
+    return { status: 200, body: { text, ...meta } };
   } catch (e) {
     if (e instanceof EgressBlocked) return { status: 403, body: { error: e.reason } };
     return { status: 502, body: { error: p === 'ollama' ? 'Modèle local injoignable. Lance ollama puis réessaie.' : String(e) } };
