@@ -4,11 +4,26 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Ledger } from './ledger';
 import { budgetView } from './budget';
-import { extractTransactions, looksLikeStatement, parseTxResponse, reconciles } from './tx-extract';
+import { DECOMPTE_NOTE, extractTransactions, looksLikeDecompte, looksLikeStatement, parseTxResponse, reconciles } from './tx-extract';
 import { parseStatement } from './statements';
 import { getWatch, runWatch, setWatch } from './watch';
 
 const reply = (o: unknown) => async () => ({ text: JSON.stringify(o), costChf: 0.01 });
+
+describe('décomptes de copropriété', () => {
+  it('ne sont pas lus comme des relevés bancaires, sans appel au modèle', async () => {
+    const l = new Ledger(':memory:');
+    const boom = async () => {
+      throw new Error('le modèle ne doit pas être appelé');
+    };
+    const txt = 'DECOMPTE CHAUFFAGE AGENCE IMMOBILIERE du 01.04.2024 au 31.03.2025 EKZ, location chaufferie au 31.03.2025 9\'156.55 TABLEAU DE REPARTITION';
+    expect(looksLikeDecompte(txt)).toBe(true);
+    const r = await extractTransactions(l, txt, 'chauffage.pdf', boom);
+    expect(r.note).toBe(DECOMPTE_NOTE);
+    expect(budgetView(l).count).toBe(0);
+    expect(looksLikeDecompte('Relevé Visa. Selon decompte caisse de chômage')).toBe(false);
+  });
+});
 
 describe('relevés lus par un modèle', () => {
   it('garde les lignes valides et ignore les autres', () => {

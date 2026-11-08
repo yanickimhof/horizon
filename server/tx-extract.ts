@@ -121,8 +121,14 @@ function chunks(text: string): string[] {
   return out.slice(0, 8);
 }
 
+/** Décompte annuel de copropriété ou de chauffage: ce sont les comptes de l'immeuble, pas des mouvements du ménage. */
+export const DECOMPTE_NOTE = 'Décompte de copropriété: lu dans la vue Décomptes, pas comme relevé bancaire.';
+export const looksLikeDecompte = (text: string): boolean => /tableau de r[ée]partition|charges fiscales\s*-\s*exercice|d[ée]compte de copropri[ée]t[ée]|d[ée]compte chauffage/i.test(text);
+
 export async function extractTransactions(l: Ledger, text: string, file = '', llm: TxLlm = defaultLlm(l)): Promise<TxResult> {
   const result: TxResult = { stored: 0, skipped: 0, lines: 0, reconciled: null, costChf: 0, note: '' };
+  // Les lignes d'un décompte (chaufferie de tout l'immeuble, entretien...) ne sont pas payées par le ménage: sans appel au modèle.
+  if (looksLikeDecompte(text)) return { ...result, note: DECOMPTE_NOTE };
   try {
     const parts: TxExtraction[] = [];
     for (const c of chunks(text)) {
