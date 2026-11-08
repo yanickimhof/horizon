@@ -202,6 +202,8 @@ export async function runWatch(l: Ledger, opts: { extract?: boolean } = {}): Pro
             statementPaths.add(m.path);
             markProcessed(l, m.sha256);
           }
+          // Aucune ligne reconnue: résultat définitif, le document n'est plus renvoyé au modèle (sinon il l'était à chaque lecture).
+          if (r.note === 'Aucune ligne reconnue.') markProcessed(l, m.sha256);
           if (r.note) status.notes.push(`${m.path}: ${r.note}`);
         }
       }
