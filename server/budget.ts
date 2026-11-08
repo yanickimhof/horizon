@@ -45,7 +45,7 @@ export function ensureBudget(l: Ledger): void {
   init(l);
 }
 
-function init(l: Ledger): void {
+export function init(l: Ledger): void {
   if (ready.has(l)) return;
   l.raw.exec(SCHEMA);
   try {
@@ -487,7 +487,8 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
     const chf = toChf(r.amount, r.currency);
     if (r.bien) {
       const b = (e.immo[r.bien] = e.immo[r.bien] ?? { loyers: 0, charges: 0 });
-      if ((r.category === 'logement' || r.category === 'travaux') && chf < 0) b.charges += -chf;
+      // Un remboursement ou un solde de décompte en notre faveur vient en déduction des charges du bien.
+      if (r.category === 'logement' || r.category === 'travaux') b.charges += -chf;
       if (r.category === 'revenu' && chf > 0) b.loyers += chf;
     } else if (r.category === 'revenu' && chf > 0 && /loyer|g[ée]rance|r[ée]gie|immobili|versement disponible|mietzins|verwaltung/i.test(r.label)) {
       // Un loyer reçu d'une régie: réparti selon ses versements détaillés, sinon compté à part tant qu'aucun bien n'est désigné.
