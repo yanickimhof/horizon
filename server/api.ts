@@ -6,6 +6,7 @@ import { CATEGORIES, applySignatures, buildReport, pairInternalTransfers, parseS
 import { classifyUnknown } from './statements-ai';
 import { proposeGap } from './statements-propose';
 import { addEstimate, setBiens, budgetView, labelTransactions, removeEstimate, setMinorUnknownToOther, storeStatements } from './budget';
+import { milaView } from './mila';
 import { classifyStored } from './budget-ai';
 import { getFournisseurs, recurringView, setFournisseurs } from './recurring';
 import { decomptesView } from './decompte';
@@ -115,6 +116,7 @@ function buildState(name: DbName, caseId: CaseId = 'base', access: { remote: boo
     docs: { chunks: l.chunkCount(), sources: l.sources().length },
     watch: { ...getWatch(l), last: lastWatch(l), running: watchProgress(l).running, step: watchProgress(l).step },
     budget: budgetView(l, new Date(), 80),
+    mila: milaView(l),
     recurring: recurringView(l),
     decomptes: decomptesView(l),
     fournisseurs: getFournisseurs(l),

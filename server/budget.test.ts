@@ -38,6 +38,16 @@ describe('base de transactions', () => {
     expect(budgetView(l).count).toBe(4);
   });
 
+  it('déduit un solde de décompte en notre faveur des charges du bien, sans le compter en loyer', () => {
+    const l = new Ledger(':memory:');
+    const a = stmt('Salaire', [['2026-09-10', 'Facture Orion', -500], ['2026-09-20', 'Solde decompte 2025 Orion', 200]]);
+    storeStatements(l, [a]);
+    // Le classement automatique est celui des relevés; ici on fixe la catégorie comme le ferait une règle de l'utilisateur.
+    l.raw.prepare("UPDATE budget_txs SET category = 'logement', bien = 'Orion'").run();
+    const m = budgetView(l, new Date('2026-10-15')).months.find((x) => x.month === '2026-09')!;
+    expect(m.immo.Orion).toEqual({ loyers: 0, charges: 300 });
+  });
+
   it('ne compte pas un virement entre deux comptes comme une dépense', () => {
     const l = new Ledger(':memory:');
     storeStatements(l, [stmt('Salaire', [['2026-09-10', 'Ordre permanent', -1000]]), stmt('Loyer', [['2026-09-10', 'Versement reçu', 1000]]), stmt('Salaire', [['2026-09-12', 'Migros', -80]])]);
