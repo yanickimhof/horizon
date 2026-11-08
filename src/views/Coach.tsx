@@ -5,10 +5,10 @@ import { api, type CoachReply, type Db, type State } from '../api';
 interface Msg { role: 'user' | 'assistant'; content: string; meta?: Omit<CoachReply, 'text'> }
 
 const IDEAS = [
-  'Pourquoi l’anneau de 5 ans est-il si bas ?',
-  'Comment aborder les études de mes enfants ?',
+  'Mon budget est-il équilibré sur 12 mois ?',
+  'Où part mon argent, et qu’est-ce qui augmente ?',
+  'Mes biens locatifs rapportent-ils vraiment ?',
   'Quelle marge ai-je pour une grosse dépense ?',
-  'Comment ont évolué mes revenus ces dernières années ?',
 ];
 
 export function Coach({ db, state }: { db: Db; state: State }) {

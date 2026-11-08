@@ -69,11 +69,10 @@ function checklist(state: State): Item[] {
 }
 
 const VIEWS: { id: string; label: string; hint: string }[] = [
-  { id: 'accueil', label: 'Accueil', hint: 'Une réponse: OK ou pas, ce qu’il te faut par mois, ce qui rentre, ce que tu as de côté' },
+  { id: 'accueil', label: 'Retraite', hint: 'Une réponse: OK ou pas, ce qu’il te faut par mois, ce qui rentre, ce que tu as de côté' },
   { id: 'horizons', label: 'Horizons', hint: 'Anneaux de couverture à 3 mois, 1 an, 5 ans et 20 ans' },
   { id: 'retraite', label: 'Scénarios', hint: 'Tient-on jusqu’à 95 ans, et que change une vente ou un choc' },
-  { id: 'summary', label: 'Synthèse', hint: 'Chiffres, composition par type, devise et pays' },
-  { id: 'coach', label: 'Coach', hint: 'Questions sur ta situation' },
+  { id: 'summary', label: 'Patrimoine', hint: 'Chiffres, composition par type, devise et pays' },
 ];
 
 export function About({ state, goto, hidden, setHidden, home, setHome }: { state: State; goto: (tab: string) => void; hidden: string[]; setHidden: (h: string[]) => void; home: string; setHome: (h: string) => void }) {
@@ -122,7 +121,7 @@ export function About({ state, goto, hidden, setHidden, home, setHome }: { state
       </section>
 
       <section className="group">
-        <header><h2>Affichage</h2></header>
+        <header><h2>Vues optionnelles</h2></header>
         <div className="group-body">
           {VIEWS.map((v) => {
             const on = !hidden.includes(v.id);
@@ -134,7 +133,7 @@ export function About({ state, goto, hidden, setHidden, home, setHome }: { state
                     <div className="line-sub">{v.hint}</div>
                   </div>
                   <div className="line-end">
-                    {on && home !== v.id && v.id !== 'coach' && <button type="button" className="btn ghost small" onClick={() => setHome(v.id)}>Vue d’accueil</button>}
+                    {on && home !== v.id && <button type="button" className="btn ghost small" onClick={() => setHome(v.id)}>Vue d’accueil</button>}
                     {home === v.id && <span className="tag ok">Accueil</span>}
                     <button type="button" role="switch" aria-checked={on} aria-label={`Afficher ${v.label}`} className={'switch' + (on ? ' on' : '')} onClick={() => setHidden(on ? [...hidden, v.id] : hidden.filter((x) => x !== v.id))}><i /></button>
                   </div>
@@ -142,7 +141,7 @@ export function About({ state, goto, hidden, setHidden, home, setHome }: { state
               </div>
             );
           })}
-          <p className="note">Les vues masquées restent disponibles: remets l’interrupteur pour les retrouver.</p>
+          <p className="note">Budget, Données, Importer, Coach, Confidentialité et À propos sont toujours là; « À valider » apparaît seulement quand il y a quelque chose à valider. Les vues ci-dessus sont masquées par défaut.</p>
         </div>
       </section>
 
