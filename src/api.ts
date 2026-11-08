@@ -30,6 +30,7 @@ export interface State {
   /** Passages indexés pour la recherche dans les documents. */
   watch: { dirs: string[]; auto: boolean; last: WatchStatus | null; running: boolean; step: string };
   budget: BudgetView;
+  mila: MilaView;
   recurring: RecurringView;
   decomptes: Decompte[];
   fournisseurs: { re?: string; key?: string; name: string; category?: string; min?: number; max?: number }[];
@@ -198,3 +199,21 @@ export interface Avoidable { key: string; label: string; category: string; kind:
 export interface RecurringView { avoidable: Avoidable[]; categories: CategoryMove[]; works: OneOff[]; months: string[]; comparedMonths: number; priorMonths: string[]; income: number; incomeBy: { label: string; amount: number; prior: number | null }[]; incomeOnce: number; compare: { income: number | null; spend: number | null; incomeNow: number | null; spendNow: number | null }; pairMonths: string[]; recurring: RecurringItem[]; merchants: Merchant[]; oneOffs: OneOff[]; totals: { recurring: number; daily: number; exceptional: number; works: number } }
 
 export interface Decompte { bien: string | null; from: string; to: string; total: number; lines: { label: string; amount: number }[]; solde: number | null; paid: number; settled: string | null }
+
+export interface MilaMonth {
+  month: string;
+  loyer: number;
+  ecole: number;
+  nourriture: number;
+  poche: number;
+  virement: number;
+}
+
+export interface MilaView {
+  from: string;
+  months: MilaMonth[];
+  surPlaceMensuel: number;
+  totalMensuel: number;
+  projection4ans: number;
+  totals: { loyer: number; ecole: number; nourriture: number; poche: number; virement: number };
+}
