@@ -4,6 +4,7 @@ import { fmt, type CaseId, type State } from '../api';
 import { CASES } from '../engine/assumptions';
 import { assess, DEFAULT_PARAMS, isTaxLine, retirementMode, UNEMPLOYMENT_NET_MONTHLY, type RetirementParams, type YearRow } from '../engine/retirement';
 import { robustness } from '../engine/sensitivity';
+import { Retraits } from './Retraits';
 import type { RetirementMode } from '../engine/types';
 import '../accueil.css';
 
@@ -142,6 +143,8 @@ export function Accueil({ state, caseId, reveal, act, goto }: { state: State; ca
           </ul>
         ) : null}
       </section>
+
+      <Retraits snap={snap} as={as} retireAge={retireAge} reveal={reveal} />
 
       <div className="links">
         <button className="link" onClick={() => goto('retraite')}>Tester un scénario <ArrowRight size={16} strokeWidth={1.5} /></button>
