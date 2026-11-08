@@ -385,7 +385,11 @@ export interface Estimate {
   category: string;
 }
 
+export interface Gerance { bien: string; regie: string; from: string; to: string; loyers: number; forfaits: number; ppe: number; taxes: number; entretien: number; honoraires: number; autres: number; benefice: number }
+
 export interface BudgetView {
+  /** Décomptes de gérance saisis (réglage « budget.gerance »): du loyer payé par le locataire au versement net. */
+  gerance: Gerance[];
   /** Règles de biens saisies par l'utilisateur. */
   biens: BienRule[];
   /** Biens désignés comme domicile (leurs charges ne sont pas comparées à des loyers). */
@@ -573,7 +577,8 @@ export function budgetView(l: Ledger, now: Date = new Date(), monthsBack = 13): 
     .map((r) => ({ key: signatureKey(r.label, r.amount), label: r.label, date: r.date, amount: toChf(r.amount, r.currency) }))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 6);
-  return { biens: getBiens(l), homes, unknownMinor, excluded, estimates, accounts, months, count: rows.length, unknown: { count: unknownCount, total: unknownTotal }, unknownSamples, currencies: [...new Set(rows.map((r) => r.currency))].sort() };
+  const gerance = (() => { try { return JSON.parse(l.getSetting('budget.gerance') || '[]'); } catch { return []; } })();
+  return { biens: getBiens(l), gerance, homes, unknownMinor, excluded, estimates, accounts, months, count: rows.length, unknown: { count: unknownCount, total: unknownTotal }, unknownSamples, currencies: [...new Set(rows.map((r) => r.currency))].sort() };
 }
 
 const CATEGORY_OK = (c: string): boolean => /^[a-z]{3,20}$/.test(c);

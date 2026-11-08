@@ -276,6 +276,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const monthsN = Math.max(rec.months.length, 1);
   // Bascule discrète mois / année: tous les montants de synthèse sont des totaux de période ramenés au mois ou à l'année.
   const [unit, setUnit] = useState<'mois' | 'an'>('mois');
+  const [immoOpen, setImmoOpen] = useState('');
   const sc = (v: number) => (v * (unit === 'mois' ? 1 : 12)) / monthsN;
   const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k), ...rec.works.map((w) => w.bien ?? 'À rattacher')])];
   const monthShort = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('fr-CH', { month: 'short' }).replace('.', '');
@@ -332,7 +333,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const factsAssets = state.facts.filter((f) => f.key.startsWith('asset:') && f.data.class === 'real_estate');
   const factsDebts = state.facts.filter((f) => f.key.startsWith('liability:') && typeof f.data.balance === 'number');
   const mois = Math.max(used.length, 1);
-  type Prop = { bien: string; home: boolean; orphan: boolean; commune: string; valeur: number | null; valeurNote: string; valeurLow: number | null; valeurHigh: number | null; dette: number; taux: number | null; amort: number; loyers: number; moisLoyer: number; charges: number; interets: number; autres: number; travaux: number; rend: number | null; items: { n: string; v: number }[] };
+  type Prop = { bien: string; home: boolean; orphan: boolean; commune: string; valeur: number | null; prix: number | null; apport: number | null; valeurNote: string; valeurLow: number | null; valeurHigh: number | null; dette: number; taux: number | null; amort: number; loyers: number; moisLoyer: number; charges: number; interets: number; autres: number; travaux: number; rend: number | null; items: { n: string; v: number }[] };
   // Tous les montants d'un bien sont des totaux sur la période choisie; l'affichage les ramène au mois ou à l'année avec sc().
   const props: Prop[] = bienNames.map((bien) => {
     const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
@@ -349,22 +350,22 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     const autres = Math.max(0, v.charges - interets - travaux);
     const moisLoyer = used.filter((m) => (m.immo?.[bien]?.loyers ?? 0) > 0).length;
     return {
-      bien, home, orphan: bien === 'Non réparti' || bien === 'À rattacher', commune: String(asset?.data.commune ?? ''), valeur, valeurNote: String(asset?.data.valueNote ?? ''),
+      bien, home, orphan: bien === 'Non réparti' || bien === 'À rattacher', commune: String(asset?.data.commune ?? ''), valeur, prix: typeof asset?.data.purchasePrice === 'number' ? Number(asset.data.purchasePrice) : null, apport: typeof asset?.data.downPayment === 'number' ? Number(asset.data.downPayment) : null, valeurNote: String(asset?.data.valueNote ?? ''),
       valeurLow: typeof asset?.data.estimateLow === 'number' ? Number(asset.data.estimateLow) : null, valeurHigh: typeof asset?.data.estimateHigh === 'number' ? Number(asset.data.estimateHigh) : null,
       dette, taux, amort: (amortYear * mois) / 12, loyers: v.loyers, moisLoyer, charges: v.charges, interets, autres, travaux,
-      rend: valeur && !home && moisLoyer === mois ? ((v.loyers - autres) * 12) / mois / valeur : null,
+      rend: (() => { const base = typeof asset?.data.purchasePrice === 'number' ? Number(asset.data.purchasePrice) : null; return base && !home && moisLoyer === mois ? ((v.loyers - autres) * 12) / mois / base : null; })(),
       items: [...items.map((x) => ({ n: x.label, v: x.perYear })), ...rec.works.filter((w) => (w.bien ?? 'À rattacher') === bien).map((w) => ({ n: `${w.label}, ${dateFr(w.date)}`, v: w.amount }))],
     };
   });
   const homeProps = props.filter((p) => p.home);
   const invProps = props.filter((p) => !p.home);
-  const renderProp = (p: Prop) => {
+  const renderProp = (p: Prop, opened = false) => {
     const res = p.loyers - p.charges;
     const after = res - p.amort;
     const ltv = p.valeur && p.dette > 0 ? p.dette / p.valeur : null;
     const li = (label: string, v: number, cls = '') => <li className={cls} key={label}><span>{label}</span><b>{money(sc(v))}</b></li>;
     return (
-      <details key={p.bien} className="prop">
+      <details key={p.bien + String(opened)} className="prop" open={opened}>
         <summary>
           <span className="pn">{p.orphan ? 'Non rattaché à un bien' : p.bien}{p.commune ? <small>{p.commune}</small> : null}</span>
           <span className="inds">
@@ -384,14 +385,35 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           {p.home ? li('Coût total', p.charges, 'net') : li('Résultat avant amortissement', res, 'net')}
           {!p.home && p.amort > 0 ? li('Capital remboursé à la banque (amortissement)', -p.amort, 'muted small') : null}
           {!p.home && p.amort > 0 ? li('Résultat après amortissement', after, 'net') : null}
-          {p.valeur ? <li className="sep"><span>Valeur estimée</span><b>{money(p.valeur)}</b></li> : null}
+          {p.prix ? <li className="sep"><span>Prix d’achat</span><b>{money(p.prix)}</b></li> : null}
+          {p.apport ? <li><span>Apport initial</span><b>{money(p.apport)}</b></li> : null}
+          {p.valeur ? <li className={p.prix ? '' : 'sep'}><span>Valeur estimée, indicative</span><b>{money(p.valeur)}</b></li> : null}
           {p.valeur && p.valeurLow !== null && p.valeurHigh !== null ? <li className="muted small"><span>Fourchette</span><b>{money(p.valeurLow)} à {money(p.valeurHigh)}</b></li> : null}
           {p.valeur && p.valeurNote ? <li className="muted small"><span>{p.valeurNote}</span></li> : null}
           {p.dette > 0 ? <li><span>Hypothèque{p.taux !== null ? `, taux moyen ${pctPlain(p.taux)}` : ''}</span><b>{money(p.dette)}</b></li> : null}
-          {p.valeur && p.dette > 0 ? <li><span>Fonds propres estimés</span><b>{money(p.valeur - p.dette)}{ltv !== null ? ` (dette ${pctPlain(ltv)})` : ''}</b></li> : null}
-          {p.rend !== null ? <li className="muted small"><span>Rendement net indicatif, avant intérêts et travaux</span><b>{pctPlain(p.rend)}</b></li> : null}
+          {(() => { const g = (state.budget.gerance ?? []).filter((x) => x.bien === p.bien).sort((x, y) => y.to.localeCompare(x.to))[0]; return g && p.prix ? <li className="muted small"><span>Rendement brut (loyers du décompte, annualisés, sur prix d’achat)</span><b>{pctPlain((g.loyers * 2) / p.prix)}</b></li> : null; })()}
         </ul>
         {!p.home && !p.orphan && p.moisLoyer < mois ? <p className="muted small">Loyers reçus sur {p.moisLoyer} mois seulement sur {mois}: le résultat est incomplet, rien n’est estimé.</p> : null}
+        {(state.budget.gerance ?? []).filter((g) => g.bien === p.bien).sort((a, b) => b.to.localeCompare(a.to)).map((g) => {
+          const enc = g.loyers + g.forfaits;
+          const gl = (label: string, v: number, cls = '') => <li className={cls} key={label}><span>{label}</span><b>{money(v)}</b></li>;
+          return (
+            <div className="decompte" key={g.from}>
+              <p className="muted small">Décompte de gérance {g.regie}, {dateFr(g.from)} au {dateFr(g.to)} (total sur la période, pas par mois)</p>
+              <ul className="mini sm">
+                {gl('Loyers payés par le locataire', g.loyers)}
+                {g.forfaits > 0 ? gl('Forfait chauffage et charges', g.forfaits) : null}
+                {gl('Encaissé par la régie', enc, 'net')}
+                {gl('Charges PPE payées par la régie', -g.ppe)}
+                {gl('Impôts fonciers et assurance', -g.taxes)}
+                {g.entretien !== 0 ? gl('Entretien, net des refacturations', -g.entretien) : null}
+                {gl('Honoraires de gestion', -g.honoraires)}
+                {g.autres !== 0 ? gl('Autres frais (divers, relocation, banque)', -g.autres) : null}
+                {gl('Résultat de gérance', g.benefice, 'net')}
+              </ul>
+            </div>
+          );
+        })}
         {p.items.length > 0 ? (
           <details className="manual">
             <summary>Détail des charges</summary>
@@ -475,7 +497,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const [openGroup, setOpenGroup] = useState('');
   const [moreG, setMoreG] = useState('');
   // Un écart ne s'affiche que s'il pèse: en francs, pas en pourcentage, et à partir de 300 CHF.
-  const note = (it: Item) => (it.delta !== null && it.delta !== undefined && it.prior !== null && it.prior !== undefined && Math.abs(it.delta) >= 300 ? { text: `${it.delta > 0 ? '+' : '−'}${money(Math.abs(it.delta))} sur un an (${money(it.prior)} avant)`, tone: '' } : null);
+  // Les charges de copropriété sont payées par appels de fonds, parfois en rattrapage: une comparaison à date de paiement serait trompeuse.
+  const note = (it: Item) => (/ppe|copropri/i.test(it.name) ? null : it.delta !== null && it.delta !== undefined && it.prior !== null && it.prior !== undefined && Math.abs(it.delta) >= 300 ? { text: `${it.delta > 0 ? '+' : '−'}${money(Math.abs(it.delta))} sur un an (${money(it.prior)} avant)`, tone: '' } : null);
   const renderRow = (it: Item) => {
     const n = note(it);
     return (
@@ -833,42 +856,49 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             const T = (f: (p: Prop) => number) => invProps.reduce((t, p) => t + f(p), 0);
             const loyers = T((p) => p.loyers), charges = T((p) => p.charges), amort = T((p) => p.amort);
             const res = loyers - charges;
-            const withVal = props.filter((p) => p.valeur);
-            const val = withVal.reduce((t, p) => t + (p.valeur ?? 0), 0);
-            const debt = withVal.reduce((t, p) => t + p.dette, 0);
             const orphan = invProps.filter((p) => p.orphan && p.loyers > 0);
+            const picked = props.find((p) => p.bien === immoOpen);
+            const hyp = factsDebts.map((d) => ({ key: d.key, label: String(d.data.label ?? d.key), balance: Number(d.data.balance), rate: Number(d.data.rate ?? 0), variable: !!d.data.variable, note: String(d.data.note ?? '') })).sort((p, q) => q.balance - p.balance);
+            const hypTotal = hyp.reduce((t, x) => t + x.balance, 0);
+            const echeance = (x: { note: string; variable: boolean; rate: number }) => (x.variable ? `SARON${x.rate > 0 ? ` ${pctPlain(x.rate)}` : ''}` : `${pctPlain(x.rate)}${/fixe jusqu/i.test(x.note) ? `, ${x.note.replace(/^fixe/i, 'fixe')}` : ''}`);
+            const gerOf = (bien: string) => [...(state.budget.gerance ?? [])].filter((g) => g.bien === bien).sort((a, b) => b.to.localeCompare(a.to))[0];
+            const brutOf = (bien: string) => { const g = gerOf(bien); return g ? ((g.loyers + g.forfaits) / 6) * (unit === 'mois' ? 1 : 12) : null; };
+            const brutTot = invProps.reduce((t, p) => t + (brutOf(p.bien) ?? 0), 0);
+            const line = (p: Prop, r: number) => (
+              <tr key={p.bien} className={'clk' + (immoOpen === p.bien ? ' on' : '')} onClick={() => setImmoOpen(immoOpen === p.bien ? '' : p.bien)} aria-expanded={immoOpen === p.bien}>
+                <td>{p.orphan ? 'Non rattaché' : p.bien}{p.moisLoyer < mois && !p.orphan && !p.home ? <small>versements sur {p.moisLoyer} mois sur {mois}</small> : null}</td>
+                <td>{brutOf(p.bien) !== null ? money(brutOf(p.bien) as number) : ''}</td>
+                <td>{p.home ? '' : money(sc(p.loyers))}</td>
+                <td>{money(sc(p.charges))}</td>
+                <td className={p.home ? '' : r >= 0 ? 'pos' : 'neg'}>{p.home ? '' : money(sc(r))}{!p.home && p.amort > 0 ? <small>après capital {money(sc(r - p.amort))}</small> : null}</td>
+              </tr>
+            );
             return (
               <section className="immo">
-                {invProps.length > 0 ? (
+                <p className="muted small">{unit === 'mois' ? 'Par mois' : 'Par an'}, au rythme de {periodLabel}. Touche un bien pour voir d’où viennent les montants.</p>
+                <table className="cmp immotbl">
+                  <thead><tr><th>Bien</th><th>Loyer du locataire<small>décompte H2 2025</small></th><th>Versé par la régie</th><th>Payé par toi</th><th>Résultat</th></tr></thead>
+                  <tbody>
+                    {invProps.map((p) => line(p, p.loyers - p.charges))}
+                    <tr className="tot"><td>Investissements</td><td>{brutTot > 0 ? money(brutTot) : ''}</td><td>{money(sc(loyers))}</td><td>{money(sc(charges))}</td><td className={res >= 0 ? 'pos' : 'neg'}>{money(sc(res))}{amort > 0 ? <small>après capital {money(sc(res - amort))}</small> : null}</td></tr>
+                    {homeProps.map((p) => line(p, 0))}
+                  </tbody>
+                </table>
+                {picked ? renderProp(picked, true) : null}
+                {orphan.length > 0 ? <p className="muted small">Attention: {money(sc(orphan.reduce((t, p) => t + p.loyers, 0)))} de loyers ne sont rattachés à aucun bien.</p> : null}
+                {hyp.length > 0 ? (
                   <>
-                    <h3 className="subtitle first">Investissements</h3>
-                    <div className="inds big">
-                      <span className="ind"><TrendingUp size={18} strokeWidth={1.6} /><b>{money(sc(loyers))}</b><small>loyers nets reçus</small></span>
-                      <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(sc(charges))}</b><small>de charges, intérêts et travaux</small></span>
-                      <span className={'ind ' + (res >= 0 ? 'ok' : 'bad')}><Landmark size={18} strokeWidth={1.6} /><b>{money(sc(res))}</b><small>de résultat</small></span>
-                    </div>
-                    <p className="muted small">{unit === 'mois' ? 'Par mois' : 'Par an'}, au rythme de {periodLabel}.{amort > 0 ? ` Après le capital remboursé à la banque (${money(sc(amort))}), il reste ${money(sc(res - amort))}.` : ''}</p>
-                    {orphan.length > 0 ? <p className="muted small">Attention: {money(sc(orphan.reduce((t, p) => t + p.loyers, 0)))} de loyers ne sont rattachés à aucun bien. Ils sont comptés ici mais pas dans un bien précis.</p> : null}
-                    {invProps.map((p) => renderProp(p))}
+                    <h3 className="subtitle">Hypothèques</h3>
+                    <table className="cmp immotbl">
+                      <thead><tr><th>Prêt</th><th>Montant</th><th>Taux</th></tr></thead>
+                      <tbody>
+                        {hyp.map((x) => <tr key={x.key}><td>{x.label.replace(/^Hypothèque\s*/i, '')}</td><td>{money(x.balance)}</td><td>{echeance(x)}</td></tr>)}
+                        <tr className="tot"><td>Total</td><td>{money(hypTotal)}</td><td /></tr>
+                      </tbody>
+                    </table>
                   </>
                 ) : null}
-                {homeProps.length > 0 ? (
-                  <>
-                    <h3 className="subtitle">Résidence principale</h3>
-                    {homeProps.map((p) => renderProp(p))}
-                  </>
-                ) : null}
-                {val > 0 ? (
-                  <>
-                    <h3 className="subtitle">Patrimoine immobilier</h3>
-                    <div className="inds big">
-                      <span className="ind"><Building2 size={18} strokeWidth={1.6} /><b>{money(val)}</b><small>valeur estimée</small></span>
-                      <span className="ind"><Landmark size={18} strokeWidth={1.6} /><b>{money(debt)}</b><small>d’hypothèques</small></span>
-                      <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(val - debt)}</b><small>de fonds propres</small></span>
-                    </div>
-                  </>
-                ) : null}
-                <p className="muted small">Loyers: versements nets reçus de la régie (après ses frais de gestion), tels qu’ils arrivent sur le compte. Charges: tout ce qui est payé pour le bien, intérêts compris. Rien n’est estimé: un mois sans versement compte pour zéro. Les valeurs sont des estimations, pas des expertises.</p>
+                <p className="muted small">Loyer du locataire: loyer et forfait de charges encaissés par la régie, tirés de son décompte de gérance. Versé par la régie: ce qui arrive sur ton compte, après ses retenues (charges PPE, honoraires, impôts fonciers, entretien). Payé par toi: intérêts, travaux et charges réglées directement. Rien n’est estimé: un mois sans versement compte pour zéro.</p>
                 {bienNames.length === 0 ? <p className="muted small">Ajoute tes biens dans Documents, « Mes biens ».</p> : null}
               </section>
             );

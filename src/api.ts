@@ -30,7 +30,7 @@ export interface State {
   /** Passages indexés pour la recherche dans les documents. */
   watch: { dirs: string[]; auto: boolean; last: WatchStatus | null; running: boolean; step: string };
   budget: BudgetView;
-  mila: MilaView;
+  mila: MilaView | null;
   recurring: RecurringView;
   decomptes: Decompte[];
   fournisseurs: { re?: string; key?: string; name: string; category?: string; min?: number; max?: number }[];
@@ -138,7 +138,10 @@ export interface BudgetMonth {
   immo: Record<string, { loyers: number; charges: number }>;
 }
 
+export interface Gerance { bien: string; regie: string; from: string; to: string; loyers: number; forfaits: number; ppe: number; taxes: number; entretien: number; honoraires: number; autres: number; benefice: number }
+
 export interface BudgetView {
+  gerance: Gerance[];
   homes: string[];
   biens: { re: string; bien: string; home?: boolean; from?: string; to?: string }[];
   excluded: { key: string; label: string; date: string; amount: number }[];

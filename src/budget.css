@@ -329,3 +329,13 @@ table.cmp tr.tot td { font-weight: 500; }
 .cmphead { font-size: 16px; margin: 4px 0 2px; font-weight: 500; }
 .cmp th small { display: block; font-weight: 400; color: var(--ink-2); font-size: 11px; }
 .mini li.net { font-weight: 500; border-top: 1px solid var(--line); }
+.immotbl { width: 100%; font-variant-numeric: tabular-nums; }
+.immotbl th { text-align: right; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.immotbl th:first-child, .immotbl td:first-child { text-align: left; }
+.immotbl td { text-align: right; padding: 8px 0; vertical-align: top; }
+.immotbl td small { display: block; color: var(--ink-2); font-size: 11px; font-weight: 400; }
+.immotbl td.pos { color: var(--pos); } .immotbl td.neg { color: var(--neg); }
+.immotbl tr.clk { cursor: pointer; }
+.immotbl tr.clk:hover td { background: var(--track); }
+.immotbl tr.clk.on td { background: var(--track); }
+.immotbl tr.tot td { font-weight: 500; border-top: 1px solid var(--line); }
