@@ -138,10 +138,11 @@ export interface BudgetMonth {
   immo: Record<string, { loyers: number; charges: number }>;
 }
 
+export interface Bail { bien: string; objet: string; from: string; to: string | null; net: number; charges: number; note?: string }
 export interface Gerance { bien: string; regie: string; from: string; to: string; loyers: number; forfaits: number; ppe: number; taxes: number; entretien: number; honoraires: number; autres: number; benefice: number }
 
 export interface BudgetView {
-  gerance: Gerance[];
+  gerance: Gerance[]; baux: Bail[];
   homes: string[];
   biens: { re: string; bien: string; home?: boolean; from?: string; to?: string }[];
   excluded: { key: string; label: string; date: string; amount: number }[];
