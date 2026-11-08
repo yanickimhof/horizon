@@ -200,20 +200,13 @@ export interface RecurringView { avoidable: Avoidable[]; categories: CategoryMov
 
 export interface Decompte { bien: string | null; from: string; to: string; total: number; lines: { label: string; amount: number }[]; solde: number | null; paid: number; settled: string | null }
 
-export interface MilaMonth {
-  month: string;
-  loyer: number;
-  ecole: number;
-  nourriture: number;
-  poche: number;
-  virement: number;
-}
+export interface MilaLine { key: string; label: string; total: number; perMonth: number; count: number }
 
 export interface MilaView {
   from: string;
-  months: MilaMonth[];
-  surPlaceMensuel: number;
-  totalMensuel: number;
-  projection4ans: number;
-  totals: { loyer: number; ecole: number; nourriture: number; poche: number; virement: number };
+  siteFrom: string;
+  fullMonths: string[];
+  famille: { couts: MilaLine[]; epargne: MilaLine[]; financement: MilaLine[]; total: number; perMonth: number };
+  compte: null | { from: string; to: string; soldeInitial: number; solde: number; entrees: MilaLine[]; sorties: MilaLine[]; totalEntrees: number; totalSorties: number; coutNet: number; coutNetPerMonth: number; hors: number };
+  cout: { total: number; perMonth: number };
 }

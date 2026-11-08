@@ -158,6 +158,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     return {
       label: `${rangeLabelFn(B.map((m) => m.month))} contre ${rangeLabelFn(A.map((m) => m.month))}`,
       months: B.length,
+      years: [String(y - 1), String(y)] as [string, string],
       income: [sum(A, (m) => m.income), sum(B, (m) => m.income)],
       exceptional: [sum(A, (m) => m.exceptional), sum(B, (m) => m.exceptional)],
       spend: [sum(A, (m) => m.spend), sum(B, (m) => m.spend)],
@@ -318,7 +319,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const parts: { k: typeof tab; label: string; v: number; color: string }[] = [
     { k: 'revient', label: 'Ce qui revient', v: rec.totals.recurring, color: 'var(--c-cash)' },
     { k: 'quotidien', label: 'Le quotidien', v: rec.totals.daily, color: 'var(--c-securities)' },
-    { k: 'exceptionnel', label: 'Exceptionnel', v: rec.totals.exceptional, color: 'var(--c-real_estate)' },
+    { k: 'exceptionnel', label: 'Ponctuel', v: rec.totals.exceptional, color: 'var(--c-real_estate)' },
     { k: 'immo', label: 'Travaux et frais des biens', v: rec.totals.works, color: 'var(--c-pension)' },
   ];
   const pct = (t: number | null) => (t === null ? '' : `${t > 0 ? '+' : ''}${Math.round(t * 100)} %`);
@@ -356,12 +357,13 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const factsAssets = state.facts.filter((f) => f.key.startsWith('asset:') && f.data.class === 'real_estate');
   const factsDebts = state.facts.filter((f) => f.key.startsWith('liability:') && typeof f.data.balance === 'number');
   const factor = 12 / Math.max(used.length, 1);
-  type Prop = { bien: string; home: boolean; commune: string; valeur: number | null; valeurNote: string; valeurLow: number | null; valeurHigh: number | null; dette: number; taux: number | null; loyers: number; charges: number; interets: number; travaux: number; autres: number; rend: number | null; cash: number; ltv: number | null; items: { n: string; v: number }[] };
+  type Prop = { amort: number; bien: string; home: boolean; commune: string; valeur: number | null; valeurNote: string; valeurLow: number | null; valeurHigh: number | null; dette: number; taux: number | null; loyers: number; charges: number; interets: number; travaux: number; autres: number; rend: number | null; cash: number; ltv: number | null; items: { n: string; v: number }[] };
   const props: Prop[] = bienNames.map((bien) => {
     const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
     const asset = factsAssets.find((f) => nrm(String(f.data.label ?? '')).includes(nrm(bien)));
     const debts = asset ? factsDebts.filter((d) => d.data.securedBy === asset.key) : [];
     const dette = debts.reduce((t, d) => t + Number(d.data.balance), 0);
+    const amort = debts.reduce((t, d) => t + Number(d.data.amortization ?? 0), 0);
     const taux = dette > 0 ? debts.reduce((t, d) => t + Number(d.data.balance) * Number(d.data.rate ?? 0), 0) / dette : null;
     const valeur = asset && typeof asset.data.value === 'number' ? Number(asset.data.value) : null;
     const home = (b.homes ?? []).includes(bien) || asset?.data.subtype === 'home';
@@ -371,9 +373,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     const autres = Math.max(0, v.charges - interets - travaux);
     const noi = (v.loyers - autres) * factor;
     return {
-      bien, home, commune: String(asset?.data.commune ?? ''), valeur, valeurNote: String(asset?.data.valueNote ?? ''), valeurLow: typeof asset?.data.estimateLow === 'number' ? Number(asset.data.estimateLow) : null, valeurHigh: typeof asset?.data.estimateHigh === 'number' ? Number(asset.data.estimateHigh) : null, dette, taux, loyers: v.loyers, charges: v.charges, interets, travaux, autres,
+      amort, bien, home, commune: String(asset?.data.commune ?? ''), valeur, valeurNote: String(asset?.data.valueNote ?? ''), valeurLow: typeof asset?.data.estimateLow === 'number' ? Number(asset.data.estimateLow) : null, valeurHigh: typeof asset?.data.estimateHigh === 'number' ? Number(asset.data.estimateHigh) : null, dette, taux, loyers: v.loyers, charges: v.charges, interets, travaux, autres,
       rend: valeur && !home ? noi / valeur : null,
-      cash: (v.loyers - v.charges) / Math.max(used.length, 1),
+      cash: (v.loyers - v.charges + travaux) / Math.max(used.length, 1),
       ltv: valeur && dette > 0 ? dette / valeur : null,
       items: [...items.map((x) => ({ n: x.label, v: x.perYear })), ...rec.works.filter((w) => (w.bien ?? 'À rattacher') === bien).map((w) => ({ n: `${w.label}, ${dateFr(w.date)}`, v: w.amount }))],
     };
@@ -408,7 +410,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           ) : (
             <span className="inds">
               <span className={'ind ' + tr}><TrendingUp size={16} strokeWidth={1.6} /><b>{p.rend !== null ? pctPlain(p.rend) : '—'}</b><small>rendement</small></span>
-              <span className={'ind ' + (p.cash >= 0 ? 'ok' : 'bad')}><Wallet size={16} strokeWidth={1.6} /><b>{money(p.cash)}</b><small>par mois</small></span>
+              <span className={'ind ' + (p.cash >= 0 ? 'ok' : 'bad')}><Wallet size={16} strokeWidth={1.6} /><b>{money(p.cash)}</b><small>par mois, hors travaux</small></span>
               <span className={'ind ' + tl2}><Landmark size={16} strokeWidth={1.6} /><b>{p.ltv !== null ? pctPlain(p.ltv) : '—'}</b><small>de dette</small></span>
             </span>
           )}
@@ -416,10 +418,12 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         <ul className="mini">
           {!p.home ? <li><span>Loyers reçus</span><b>{money(p.loyers)}</b></li> : null}
           {p.items.map((it, i) => <li key={i}><span>{it.n}</span><b>{money(it.v)}</b></li>)}
-          {!p.home ? <li className="net"><span>Net</span><b>{money(p.loyers - p.charges)}</b></li> : null}
+          {!p.home ? <li className="net"><span>Net hors travaux</span><b>{money(p.loyers - p.charges + p.travaux)}</b></li> : null}
+          {p.travaux > 0 ? <li className="muted small"><span>Travaux ponctuels, non comptés dans le cash-flow</span><b>{money(p.travaux)}</b></li> : null}
           {p.valeur ? <li className="sep"><span>Valeur estimée</span><b>{money(p.valeur)}</b></li> : null}
           {p.valeur && (p.valeurLow !== null && p.valeurHigh !== null) ? <li className="muted small"><span>Fourchette</span><b>{money(p.valeurLow)} à {money(p.valeurHigh)}</b></li> : null}
           {p.valeur && p.valeurNote ? <li className="muted small"><span>{p.valeurNote}</span></li> : null}
+          {p.amort > 0 ? <li className="muted small"><span>Amortissement annuel</span><b>{money(p.amort)}</b></li> : null}
           {p.dette > 0 ? <li><span>Hypothèque{p.taux !== null ? `, taux moyen ${pctPlain(p.taux)}` : ''}</span><b>{money(p.dette)}</b></li> : null}
         </ul>
         {(() => {
@@ -577,6 +581,31 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   };
   const maxCat = Math.max(1, ...cats.map((c) => (catView === 'total' ? c.total : c.avg)));
 
+  const hbars = (rows: { k: string; label: string; v: number; note?: string; color?: string }[], max: number) => (
+    <ul className="hb">
+      {rows.map((r) => (
+        <li key={r.k}>
+          <span className="hl">{r.label}{r.note ? <small>{r.note}</small> : null}</span>
+          <span className="hbar"><i style={{ width: `${max > 0 ? Math.min(100, (Math.abs(r.v) / max) * 100) : 0}%`, background: r.color ?? 'var(--c-cash)' }} /></span>
+          <b>{money(r.v)}</b>
+        </li>
+      ))}
+    </ul>
+  );
+  const STRUCT = ['impots', 'logement', 'assurances', 'energie', 'enfants', 'famille'];
+  const revCats = Object.values(rec.recurring.reduce<Record<string, { k: string; v: number }>>((t, x) => ({ ...t, [x.category]: { k: x.category, v: (t[x.category]?.v ?? 0) + x.perYear } }), {})).sort((p, q) => q.v - p.v);
+  const revTotal = revCats.reduce((t, x) => t + x.v, 0);
+  const revStruct = revCats.filter((x) => STRUCT.includes(x.k)).reduce((t, x) => t + x.v, 0);
+  const revMoves = rec.recurring.filter((x) => x.delta !== null && Math.abs(x.delta) >= 200).sort((p, q) => Math.abs(q.delta ?? 0) - Math.abs(p.delta ?? 0)).slice(0, 5);
+  const DAILY: [string, string[], string][] = [['Courses', ['alimentation'], 'var(--c-securities)'], ['Restaurants', ['restaurants'], 'var(--c-real_estate)'], ['Achats et loisirs', ['quotidien', 'maison', 'vetements', 'loisirs'], 'var(--c-pension)']];
+  const dailyMonths = full.slice(-13).map((m) => ({ month: m.month, parts: DAILY.map(([, ks]) => ks.reduce((t, k) => t + (m.byCategory[k] ?? 0), 0)) }));
+  const dailyMax = Math.max(1, ...dailyMonths.map((m) => m.parts.reduce((t, v) => t + v, 0)));
+  const dailyAvg = dailyMonths.length ? dailyMonths.reduce((t, m) => t + m.parts.reduce((a, v) => a + v, 0), 0) / dailyMonths.length : 0;
+  const mortgageLevers = factsDebts
+    .map((d) => ({ key: d.key, label: String(d.data.label ?? d.key), interest: Number(d.data.balance) * Number(d.data.rate ?? 0), rate: Number(d.data.rate ?? 0) }))
+    .filter((d) => d.rate >= 0.012)
+    .sort((p, q) => q.interest - p.interest);
+
   return (
     <div className="page wide budget">
       <div className="topbar">
@@ -588,13 +617,56 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         <>
           {timeline}
           <div className="tabs" role="tablist" aria-label="Rubriques">
-            {([['synthese', 'Synthèse', <LayoutGrid key="s" size={20} strokeWidth={1.5} />], ['revient', 'Revient', <Repeat key="a" size={20} strokeWidth={1.5} />], ['quotidien', 'Quotidien', <ShoppingBasket key="b" size={20} strokeWidth={1.5} />], ['exceptionnel', 'Exceptionnel', <Zap key="c" size={20} strokeWidth={1.5} />], ['immo', 'Immobilier', <Building2 key="e" size={20} strokeWidth={1.5} />], ['compare', 'Comparatif', <Repeat key="p" size={20} strokeWidth={1.5} />], ['mila', 'Mila', <Home key="m" size={20} strokeWidth={1.5} />]] as [typeof tab, string, ReactElement][]).map(([k, l, ic]) => (
+            {([['synthese', 'Synthèse', <LayoutGrid key="s" size={20} strokeWidth={1.5} />], ['revient', 'Revient', <Repeat key="a" size={20} strokeWidth={1.5} />], ['quotidien', 'Quotidien', <ShoppingBasket key="b" size={20} strokeWidth={1.5} />], ['exceptionnel', 'Ponctuel', <Zap key="c" size={20} strokeWidth={1.5} />], ['immo', 'Immobilier', <Building2 key="e" size={20} strokeWidth={1.5} />], ['compare', 'Comparatif', <Repeat key="p" size={20} strokeWidth={1.5} />], ['mila', 'Mila', <Home key="m" size={20} strokeWidth={1.5} />]] as [typeof tab, string, ReactElement][]).map(([k, l, ic]) => (
               <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setTab(k); setMore(false); setOpen(''); }}>{ic}<span>{l}</span></button>
             ))}
           </div>
 
+          {tab === 'revient' && revTotal > 0 ? (
+            <section>
+              <h3 className="subtitle first">Où part ce qui revient</h3>
+              <div className="stackbar" aria-hidden="true"><i style={{ width: `${(revStruct / revTotal) * 100}%`, background: 'var(--c-cash)' }} /><i style={{ width: `${((revTotal - revStruct) / revTotal) * 100}%`, background: 'var(--c-real_estate)' }} /></div>
+              <p className="muted small">Structurel (impôts, logement, assurances, énergie, enfants): {money(revStruct)}, {Math.round((revStruct / revTotal) * 100)} %. Ajustable: {money(revTotal - revStruct)}, {Math.round(((revTotal - revStruct) / revTotal) * 100)} %.</p>
+              {hbars(revCats.slice(0, 8).map((x) => ({ k: x.k, label: LABEL[x.k] ?? x.k, v: x.v, note: `${Math.round((x.v / revTotal) * 100)} %`, color: STRUCT.includes(x.k) ? 'var(--c-cash)' : 'var(--c-real_estate)' })), revCats[0]?.v ?? 1)}
+              {revMoves.length > 0 ? (
+                <>
+                  <h3 className="subtitle">Ce qui a le plus bougé</h3>
+                  <ul className="rows">
+                    {revMoves.map((x) => (
+                      <li key={x.key} className="plain"><span className="n">{x.label}<small>{LABEL[x.category] ?? x.category}</small></span><span className="v">{money(x.perYear)} <small>{(x.delta ?? 0) > 0 ? '+' : '−'}{money(Math.abs(x.delta ?? 0))} sur un an</small></span></li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              <h3 className="subtitle">Détail</h3>
+            </section>
+          ) : null}
           {tab === 'revient' ? renderList('revient', rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, bases: x.bases, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, `environ ${money(x.perMonth)} par mois`, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))) : null}
+          {tab === 'quotidien' && dailyMonths.length > 0 ? (
+            <section>
+              <h3 className="subtitle first">Le quotidien mois par mois</h3>
+              <p className="muted small">En moyenne {money(dailyAvg)} par mois.</p>
+              <div className="cols" role="img" aria-label="Dépenses du quotidien par mois">
+                {dailyMonths.map((m) => {
+                  const tot = m.parts.reduce((t, v) => t + v, 0);
+                  return (
+                    <div key={m.month} className="col" title={`${m.month}: ${money(tot)}`}>
+                      <span className="stk" style={{ height: `${(tot / dailyMax) * 100}%` }}>
+                        {m.parts.map((v, i) => <i key={i} style={{ flex: v, background: DAILY[i][2] }} />)}
+                      </span>
+                      <small>{monthShort(m.month)}</small>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="legend">{DAILY.map(([n, , c]) => <span key={n}><i style={{ background: c }} />{n}</span>)}</p>
+              <h3 className="subtitle">Où vont ces achats</h3>
+              {hbars(rec.merchants.slice(0, 8).map((x) => ({ k: x.key, label: x.label, v: x.total, note: `${plural(x.count, 'achat')}`, color: 'var(--c-securities)' })), rec.merchants[0]?.total ?? 1)}
+              <h3 className="subtitle">Détail</h3>
+            </section>
+          ) : null}
           {tab === 'quotidien' ? renderList('quotidien', rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, bases: x.bases, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, `environ ${money(x.total / monthsN)} par mois`, plural(x.count, 'paiement')], lines: x.lines }))) : null}
+          {tab === 'exceptionnel' ? <p className="muted small">Dépenses normales qui ne reviennent pas chaque mois: impôts, voyages, santé, formation, véhicule, achats importants. Rien d’exceptionnel là-dedans, c’est le coût d’une année.</p> : null}
           {tab === 'exceptionnel' ? renderList('exceptionnel', rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, bases: x.bases, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))) : null}
 
           {tab === 'synthese' ? (
@@ -622,11 +694,11 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   </ul>
                 </div>
               </div>
-              {rec.avoidable.length > 0 ? (
+              {rec.avoidable.filter((x) => x.kind !== 'habitude').length > 0 ? (
                 <>
                   <h3 className="subtitle">À questionner</h3>
                   <ul className="rows">
-                    {rec.avoidable.slice(0, 6).map((x) => (
+                    {rec.avoidable.filter((x) => x.kind !== 'habitude').slice(0, 6).map((x) => (
                       <li key={x.key + x.kind} className="plain">
                         <span className="n">{x.label}<small>{x.kind === 'abonnement' ? `Abonnement, ${plural(x.count, 'paiement')}` : x.kind === 'frais' ? `Frais, ${plural(x.count, 'paiement')}` : `${plural(x.count, 'achat')} au même endroit, environ ${money(x.perMonth)} par mois`}</small></span>
                         <span className="v">{money(x.perYear)}</span>
@@ -635,10 +707,13 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   </ul>
                 </>
               ) : null}
-              {levers.length > 0 ? (
+              {levers.length + mortgageLevers.length > 0 ? (
                 <>
                   <h3 className="subtitle">À comparer ou renégocier</h3>
                   <ul className="rows">
+                    {mortgageLevers.slice(0, 3).map((x) => (
+                      <li key={x.key} className="plain"><span className="n">{x.label}<small>Taux {pctPlain(x.rate)}: à comparer au SARON au renouvellement</small></span><span className="v">{money(x.interest)}<small>d’intérêts par an</small></span></li>
+                    ))}
                     {levers.slice(0, 4).map((x) => (
                       <li key={x.key} className="plain"><span className="n">{x.label}<small>{x.cadence}</small></span><span className="v">{money(x.perYear)}</span></li>
                     ))}
@@ -648,55 +723,83 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             </section>
           ) : null}
 
-          {tab === 'compare' && cmpData ? (
-            <section className="immo">
-              <h3 className="subtitle first">Entrées et sorties: {cmpData.label}</h3>
-              <ul className="rows">
-                <li className="plain"><span className="n">Revenus réguliers<small>salaire, chômage, loyers nets</small></span><span className="v">{money(cmpData.income[1])} <small>contre {money(cmpData.income[0])}</small></span></li>
-                <li className="plain"><span className="n">Versements uniques reçus<small>indemnités, soldes, ventes: hors revenus</small></span><span className="v">{money(cmpData.exceptional[1])} <small>contre {money(cmpData.exceptional[0])}</small></span></li>
-                <li className="plain"><span className="n">Dépenses<small>dont ponctuelles désignées: {money(cmpData.oneOff[1])} contre {money(cmpData.oneOff[0])}</small></span><span className="v">{money(cmpData.spend[1])} <small>contre {money(cmpData.spend[0])}</small></span></li>
-                <li className="plain"><span className="n">Mis de côté<small>épargne, 3e pilier, rachats</small></span><span className="v">{money(cmpData.saved[1])} <small>contre {money(cmpData.saved[0])}</small></span></li>
-                <li className="plain"><span className="n">Reste après dépenses<small>revenus réguliers moins dépenses</small></span><span className="v">{money(cmpData.income[1] - cmpData.spend[1])} <small>contre {money(cmpData.income[0] - cmpData.spend[0])}</small></span></li>
-              </ul>
-              {cmpData.rows.map((g) => (
-                <div key={g.name}>
-                  <h3 className="subtitle">{g.name}</h3>
-                  <ul className="rows">
-                    {g.items.map((x) => {
-                      const d = x.b - x.a;
-                      return (
-                        <li key={x.k} className="plain">
-                          <span className="n">{LABEL[x.k] ?? x.k}<small>{cmpData.spend[1] > 0 ? `${Math.round((x.b / cmpData.spend[1]) * 100)} % des dépenses` : ''}</small></span>
-                          <span className="v">{money(x.b)} <small>contre {money(x.a)}{Math.abs(d) >= 100 ? `, ${d > 0 ? '+' : '−'}${money(Math.abs(d))}` : ''}</small></span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))}
-              <p className="muted small">Mêmes mois comparés d’une année à l’autre. Comptes bancaires et cartes importés, doublons et virements entre tes comptes écartés. Les loyers sont nets des charges payées par la gérance.</p>
-            </section>
-          ) : null}
+          {tab === 'compare' && cmpData ? (() => {
+            const all = cmpData.rows.flatMap((g, gi) => g.items.map((x) => ({ ...x, struct: gi === 0 })));
+            const top = [...all].sort((p, q) => q.b - p.b).slice(0, 10);
+            const rest = all.filter((x) => !top.includes(x));
+            const restA = rest.reduce((t, x) => t + x.a, 0);
+            const restB = rest.reduce((t, x) => t + x.b, 0);
+            const lines = [...top.map((x) => ({ k: x.k, label: LABEL[x.k] ?? x.k, a: x.a, b: x.b, struct: x.struct })), ...(rest.length ? [{ k: 'autres', label: 'Autres', a: restA, b: restB, struct: false }] : [])];
+            const mx = Math.max(1, ...lines.flatMap((x) => [x.a, x.b]));
+            const [yA, yB] = cmpData.years;
+            const diff = (n: number) => (Math.abs(n) < 100 ? '—' : `${n > 0 ? '+' : '−'}${money(Math.abs(n))}`);
+            return (
+              <section className="immo">
+                <h3 className="subtitle first">{cmpData.label}</h3>
+                <table className="cmp">
+                  <thead><tr><th /><th>{yA}</th><th>{yB}</th><th>Écart</th></tr></thead>
+                  <tbody>
+                    <tr><td>Revenus réguliers</td><td>{money(cmpData.income[0])}</td><td>{money(cmpData.income[1])}</td><td>{diff(cmpData.income[1] - cmpData.income[0])}</td></tr>
+                    <tr><td>Dépenses</td><td>{money(cmpData.spend[0])}</td><td>{money(cmpData.spend[1])}</td><td className={cmpData.spend[1] > cmpData.spend[0] ? 'neg' : 'pos'}>{diff(cmpData.spend[1] - cmpData.spend[0])}</td></tr>
+                    <tr className="tot"><td>Reste</td><td>{money(cmpData.income[0] - cmpData.spend[0])}</td><td>{money(cmpData.income[1] - cmpData.spend[1])}</td><td>{diff(cmpData.income[1] - cmpData.spend[1] - (cmpData.income[0] - cmpData.spend[0]))}</td></tr>
+                  </tbody>
+                </table>
+                <h3 className="subtitle">Dépenses par catégorie</h3>
+                <ul className="pair">
+                  {lines.map((x) => {
+                    const d = x.b - x.a;
+                    return (
+                      <li key={x.k}>
+                        <span className="pl">{x.label}{x.struct ? <small>structurel</small> : null}</span>
+                        <span className="pb"><i className="a" style={{ width: `${(x.a / mx) * 100}%` }} /><i className="b" style={{ width: `${(x.b / mx) * 100}%` }} /></span>
+                        <span className="pv">{money(x.b)}<small className={d > 100 ? 'neg' : d < -100 ? 'pos' : ''}>{diff(d)}</small></span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="legend"><span><i className="lg a" />{yA}</span><span><i className="lg b" />{yB}</span></p>
+                <p className="muted small">Mêmes mois comparés d’une année à l’autre, doublons et virements entre comptes écartés. Hors versements uniques ({money(cmpData.exceptional[1])} contre {money(cmpData.exceptional[0])}) et argent mis de côté ({money(cmpData.saved[1])} contre {money(cmpData.saved[0])}).</p>
+              </section>
+            );
+          })() : null}
 
-          {tab === 'mila' && state.mila ? (
-            <section className="immo">
-              <h3 className="subtitle first">Mila sur place (Ste-Croix, école)</h3>
-              <div className="inds big">
-                <span className="ind"><ShoppingBasket size={18} strokeWidth={1.6} /><b>{money(state.mila.surPlaceMensuel)}</b><small>par mois, école et repas, hors loyer</small></span>
-                <span className="ind"><Home size={18} strokeWidth={1.6} /><b>{money(state.mila.totalMensuel)}</b><small>par mois, loyer compris</small></span>
-                <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(state.mila.projection4ans)}</b><small>sur 4 ans, au rythme actuel</small></span>
-              </div>
-              <ul className="list">
-                {[...state.mila.months].reverse().map((m) => (
-                  <li key={m.month}>
-                    <span>{m.month}</span>
-                    <span className="muted small">loyer {money(m.loyer)} · école {money(m.ecole)} · repas {money(m.nourriture)} · poche {money(m.poche)} · virements {money(m.virement)}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="muted small">Depuis le 1er janvier 2026. Repas: achats à Ste-Croix et Yverdon uniquement. L’argent de poche (90 par mois) et les virements vers son compte ne sont pas des coûts sur place; tant que son compte n’est pas importé, ses achats ne sont pas vus. La moyenne ne compte que les mois pleins depuis septembre.</p>
-            </section>
-          ) : null}
+          {tab === 'mila' && state.mila ? (() => {
+            const mv = state.mila;
+            const MAP: Record<string, string> = { loyer: 'Logement', ecole: 'École', nourriture: 'Repas et courses', alimentation: 'Repas et courses', restaurants: 'Repas et courses', sante: 'Santé' };
+            const acc: Record<string, { label: string; total: number; perMonth: number }> = {};
+            const put = (key: string, x: { total: number; perMonth: number }) => {
+              const label = MAP[key] ?? 'Autres';
+              acc[label] = { label, total: (acc[label]?.total ?? 0) + x.total, perMonth: (acc[label]?.perMonth ?? 0) + x.perMonth };
+            };
+            mv.famille.couts.forEach((x) => put(x.key, x));
+            mv.compte?.sorties.forEach((x) => put(x.key, x));
+            const rows = Object.values(acc).sort((p, q) => q.total - p.total);
+            const maxRow = Math.max(1, ...rows.map((x) => x.perMonth));
+            return (
+              <section className="immo">
+                <h3 className="subtitle first">Ce que Mila nous coûte</h3>
+                <div className="inds big">
+                  <span className="ind"><Home size={18} strokeWidth={1.6} /><b>{money(mv.cout.perMonth)}</b><small>par mois, depuis septembre</small></span>
+                  <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(mv.cout.total)}</b><small>depuis le 17 août</small></span>
+                </div>
+                {hbars(rows.map((x) => ({ k: x.label, label: x.label, v: x.perMonth, note: `${money(x.total)} au total`, color: 'var(--c-cash)' })), maxRow)}
+                <p className="muted small">Montants par mois. Yverdon et Ste-Croix uniquement, plus tout ce qui est clairement pour le CPNV.</p>
+                {mv.famille.epargne.length > 0 ? <p className="muted small">Mis de côté pour elle, pas un coût: {money(mv.famille.epargne.reduce((t, x) => t + x.total, 0))} d’argent de poche versé sur son épargne.</p> : null}
+                <p className="muted small">Dépôt de garantie de 900 CHF versé le 14 août, remboursé fin juin 2027: pas un coût.</p>
+                {mv.compte ? (
+                  <details className="prop">
+                    <summary><span className="pn">Son compte Migros<small>solde {money(mv.compte.solde)}</small></span></summary>
+                    <ul className="mini">
+                      <li><span>Versé par la famille</span><b>{money(mv.compte.totalEntrees)}</b></li>
+                      {mv.compte.sorties.map((x) => <li key={x.key}><span>{x.label}</span><b>{money(x.total)}</b></li>)}
+                      <li className="net"><span>Dépensé et compté</span><b>{money(mv.compte.totalSorties)}</b></li>
+                      {mv.compte.hors > 0 ? <li className="muted small"><span>Hors Yverdon et Ste-Croix, non compté</span><b>{money(mv.compte.hors)}</b></li> : null}
+                    </ul>
+                  </details>
+                ) : null}
+              </section>
+            );
+          })() : null}
 
           {tab === 'immo' ? (
             <section className="immo">
@@ -712,12 +815,12 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                   {invSummary ? (
                     <div className="inds big">
                       <span className={'ind ' + invSummary.tone.r}><TrendingUp size={18} strokeWidth={1.6} /><b>{invSummary.rend !== null ? pctPlain(invSummary.rend) : '—'}</b><small>rendement net</small></span>
-                      <span className={'ind ' + invSummary.tone.c}><Wallet size={18} strokeWidth={1.6} /><b>{money(invSummary.cash)}</b><small>par mois, après intérêts</small></span>
+                      <span className={'ind ' + invSummary.tone.c}><Wallet size={18} strokeWidth={1.6} /><b>{money(invSummary.cash)}</b><small>par mois, après intérêts, hors travaux</small></span>
                       <span className={'ind ' + invSummary.tone.l}><Landmark size={18} strokeWidth={1.6} /><b>{invSummary.ltv !== null ? pctPlain(invSummary.ltv) : '—'}</b><small>de dette</small></span>
                     </div>
                   ) : null}
                   {invProps.map((p) => renderProp(p))}
-                  <p className="muted small">Rendement net: loyers moins charges courantes (avant intérêts) sur la valeur estimée, donc indicatif tant que cette valeur n’est pas une expertise. Cash-flow: ce qui reste chaque mois après intérêts et travaux. Dette: hypothèque sur valeur estimée.</p>
+                  <p className="muted small">Rendement net: loyers moins charges courantes (avant intérêts) sur la valeur estimée, donc indicatif tant que cette valeur n’est pas une expertise. Cash-flow: ce qui reste chaque mois après intérêts, sans les travaux ponctuels (comptés à part). Dette: hypothèque sur valeur estimée.</p>
                 </>
               ) : null}
               {bienNames.length === 0 ? <p className="muted small">Ajoute tes biens dans Documents, « Mes biens ».</p> : null}
