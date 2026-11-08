@@ -19,6 +19,7 @@ import { getWatch, lastWatch, setWatch, startRun, watchProgress } from './watch'
 import { EgressBlocked, consentGranted, envLocked, getTerms, guardedFetch, privacyMode, restoreLocal, setTerms, type Consent } from './egress';
 import { updateMarket } from './market';
 import { buildCoachSystem } from './coach';
+import { portfolio } from '../src/engine/biens';
 import { decide } from './access';
 import { upcoming } from '../src/engine/upcoming';
 import { monthlyExpenses } from '../src/engine/horizons';
@@ -300,8 +301,19 @@ function budgetCoachLines(l: Ledger): string[] {
   return lines;
 }
 
-function coachSystem(name: DbName, passages = ''): string {
-  return buildCoachSystem(coachContext(name), passages);
+/** Chiffres en francs du modèle, pour un modèle local seulement. */
+function localFigures(name: DbName): string {
+  const s = buildState(name);
+  const p = portfolio(s.snapshot, s.facts as never, s.budget as never);
+  const f = (x: number) => Math.round(x).toLocaleString('fr-CH').replace(/\u202f/g, ' ');
+  return [
+    `Immobilier: valeur estimée ${f(p.totalValue)}, dettes ${f(p.totalDebt)}, fonds propres ${f(p.equity)} (dette ${Math.round(p.ltv * 100)} % de la valeur).`,
+    ...p.biens.map((b) => `- ${b.name}${b.home ? ' (résidence principale)' : ''}: valeur ${f(b.value)}${b.ranged ? ` (fourchette ${f(b.low)} à ${f(b.high)})` : ' (estimation sans fourchette)'}, dette ${f(b.debt)}, fonds propres ${f(b.equity)}.`),
+  ].join('\n');
+}
+
+function coachSystem(name: DbName, passages = '', figures = ''): string {
+  return buildCoachSystem(coachContext(name), passages, figures);
 }
 
 async function coach(name: DbName, message: string, history: { role: 'user' | 'assistant'; content: string }[]) {
@@ -313,7 +325,7 @@ async function coach(name: DbName, message: string, history: { role: 'user' | 'a
   // Les extraits contiennent de vrais montants: modèle local, ou accord distinct pour le coach en ligne.
   const docsAllowed = p === 'ollama' || Boolean(consentGranted(l, 'coachDocs'));
   const found: Passage[] = docsAllowed ? retrieve(l, message, 6) : [];
-  const system = ps(coachSystem(name, found.length ? formatPassages(found) : ''));
+  const system = ps(coachSystem(name, found.length ? formatPassages(found) : '', p === 'ollama' ? localFigures(name) : ''));
   const meta = {
     docsUsed: found.length > 0,
     docsAvailable: l.chunkCount() > 0,
