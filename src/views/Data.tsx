@@ -51,7 +51,6 @@ export function Data({ db, state, setState, act, reveal }: { db: Db; state: Stat
         <Block key={s.kind} db={db} section={s} facts={state.facts.filter((f) => f.kind === s.kind)} state={state} act={act} reveal={reveal} />
       ))}
       <Rates db={db} state={state} setState={setState} act={act} />
-      <Notes state={state} act={act} />
     </div>
   );
 }
@@ -663,47 +662,6 @@ function Rates({ db, state, setState, act }: { db: Db; state: State; setState: (
         <button className="btn">Saisir</button>
       </form>
       </details>}
-    </section>
-  );
-}
-
-function NoteRow({ n, act }: { n: { id: string; text: string }; act: Act }) {
-  const [edit, setEdit] = useState(false);
-  const [text, setText] = useState(n.text);
-  return (
-    <li className="row wrap">
-      {!edit ? (
-        <>
-          <div className="row-main"><div className="row-title plain">{n.text}</div></div>
-          <button className="icon-btn small" onClick={() => setEdit(true)} aria-label="Modifier la note" title="Modifier"><Pencil {...IC} /></button>
-          <button className="icon-btn small" onClick={() => act('note/delete', { id: n.id })} aria-label="Supprimer la note" title="Supprimer"><Trash2 {...IC} /></button>
-        </>
-      ) : (
-        <div className="row-edit" style={{ width: '100%' }}>
-          <input value={text} onChange={(e) => setText(e.target.value)} aria-label="Note" style={{ flex: 1 }} />
-          <button className="btn primary small" onClick={async () => { await act('note/update', { id: n.id, text }); setEdit(false); }}>Enregistrer</button>
-          <button className="icon-btn small" onClick={() => setEdit(false)} aria-label="Annuler" title="Annuler"><X {...IC} /></button>
-        </div>
-      )}
-    </li>
-  );
-}
-
-function Notes({ state, act }: { state: State; act: Act }) {
-  const [text, setText] = useState('');
-  return (
-    <section className="block">
-      <h2>Contexte retenu</h2>
-      <p className="muted">Ce qui n’est pas un chiffre mais que le coach doit savoir: projets, contraintes, événements prévus.</p>
-      {state.notes.length > 0 && (
-        <ul className="list">
-          {state.notes.map((n) => <NoteRow key={n.id} n={n} act={act} />)}
-        </ul>
-      )}
-      <div className="form inline" style={{ marginTop: 12 }}>
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Par exemple: déménagement envisagé vers 2032" aria-label="Nouvelle note" />
-        <button className="btn" onClick={async () => { if (text.trim()) { await act('note', { text }); setText(''); } }}>Retenir</button>
-      </div>
     </section>
   );
 }

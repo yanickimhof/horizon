@@ -88,7 +88,7 @@ export function App() {
     { id: 'accueil', label: 'Retraite', icon: <Sunrise {...ICON} /> },
     { id: 'horizons', label: 'Horizons', icon: <Target {...ICON} /> },
     { id: 'retraite', label: 'Scénarios', icon: <Hourglass {...ICON} /> },
-    { id: 'summary', label: 'Synthèse', icon: <LayoutDashboard {...ICON} /> },
+    { id: 'summary', label: 'Patrimoine', icon: <LayoutDashboard {...ICON} /> },
     { id: 'inbox', label: 'À valider', icon: <CircleCheck {...ICON} />, badge: state?.inbox.length },
     { id: 'data', label: 'Données', icon: <List {...ICON} /> },
     ...(state?.access.remote ? [] : [{ id: 'import' as Tab, label: 'Importer', icon: <FolderUp {...ICON} /> }]),
@@ -97,7 +97,8 @@ export function App() {
     { id: 'about', label: 'À propos', icon: <Info {...ICON} /> },
   ];
 
-  const shown = tabs.filter((x) => !hidden.includes(x.id) || x.id === tab);
+  // « À valider » n'apparaît que s'il y a quelque chose à valider; Budget, Données et Coach restent toujours visibles.
+  const shown = tabs.filter((x) => (x.id === 'inbox' ? (x.badge ?? 0) > 0 || x.id === tab : !hidden.includes(x.id) || x.id === tab || x.id === 'coach'));
   return (
     <div className="app">
       <style>{paletteCss()}</style>

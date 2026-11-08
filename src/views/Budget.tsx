@@ -271,7 +271,6 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const rec = period === '12' || !recAlt ? state.recurring : recAlt;
   const [open, setOpen] = useState('');
   const [tab, setTab] = useState<'synthese' | 'revient' | 'quotidien' | 'immo' | 'mila' | 'compare'>('synthese');
-  const [milaSpan, setMilaSpan] = useState<'mois' | 'annee'>('mois');
   const [more, setMore] = useState(false);
   const monthsN = Math.max(rec.months.length, 1);
   // Bascule discrète mois / année: tous les montants de synthèse sont des totaux de période ramenés au mois ou à l'année.
@@ -436,6 +435,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const selMonths = new Set(rec.months);
   // Choix de la période: un toucher = un mois, un glissé sur les barres = une plage; les raccourcis couvrent le reste.
   const [drag, setDrag] = useState<[number, number] | null>(null);
+  const [hov, setHov] = useState<number | null>(null);
   const barIdx = (e: RPointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     return Math.max(0, Math.min(tl.length - 1, Math.floor(((e.clientX - r.left) / Math.max(r.width, 1)) * tl.length)));
@@ -448,6 +448,12 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     if (a === z) setSpan(period === tl[a].month ? '12' : tl[a].month);
     else setSpan(`${tl[a].month}..${tl[z].month}`);
   };
+  const niceStep = (mx: number) => { const raw = mx / 3; const p = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1)))); const f = raw / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; };
+  const axStep = niceStep(tlMax);
+  const axTop = Math.ceil(tlMax / axStep) * axStep;
+  const axTicks = Array.from({ length: Math.round(axTop / axStep) }, (_, i) => (i + 1) * axStep);
+  const kfmt = (v: number) => (v >= 1000 ? `${Math.round(v / 100) / 10}`.replace('.', ',') + ' k' : String(v));
+  const avg3 = tl.map((_, i) => { const w = tl.slice(Math.max(0, i - 2), i + 1).filter((x) => x.spend > 0); return w.length ? w.reduce((t, x) => t + x.spend, 0) / w.length : 0; });
   const shownMonths = drag ? new Set(tl.slice(Math.min(...drag), Math.max(...drag) + 1).map((m) => m.month)) : selMonths;
   const presets: [string, string][] = [['12', '12 mois'], ...years.slice(0, 2).map((y): [string, string] => [y, y === curYear && last && last.month.slice(5) !== '12' ? `${y} à ce jour` : y])];
   const timeline = (
@@ -461,12 +467,21 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         onPointerUp={endDrag}
         onPointerCancel={() => setDrag(null)}
       >
-        {tl.map((m) => (
-          <button key={m.month} className={shownMonths.has(m.month) ? 'on' : ''} onClick={(e) => { if (e.detail === 0) setSpan(period === m.month ? '12' : m.month); }} title={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-label={monthName(m.month)} aria-pressed={shownMonths.has(m.month)}>
-            <i className="dep" style={{ height: `${Math.max(3, (m.spend / tlMax) * 100)}%` }} />
-            <i className="tick" style={{ bottom: `${Math.min(98, (m.income / tlMax) * 100)}%` }} />
-          </button>
-        ))}
+        <div className="tlgrid" aria-hidden="true">
+          {axTicks.map((v) => <span key={v} style={{ bottom: `${(v / axTop) * 100}%` }}>{reveal ? <em>{kfmt(v)}</em> : null}</span>)}
+        </div>
+        <svg className="tlavg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points={tl.map((_, i) => `${((i + 0.5) / tl.length) * 100},${100 - (avg3[i] / axTop) * 100}`).join(' ')} fill="none" vectorEffect="non-scaling-stroke" />
+        </svg>
+        {tl.map((m, i) => {
+          const over = m.spend > m.income && m.income > 0;
+          return (
+            <button key={m.month} className={(shownMonths.has(m.month) ? 'on' : '') + (over ? ' over' : '') + (m.spend === 0 && m.income === 0 ? ' none' : '') + (hov === i ? ' hov' : '')} onClick={(e) => { if (e.detail === 0) setSpan(period === m.month ? '12' : m.month); }} onPointerEnter={() => setHov(i)} onPointerLeave={() => setHov(null)} title={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-label={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-pressed={shownMonths.has(m.month)}>
+              <i className="dep" style={{ height: `${Math.max(m.spend === 0 ? 0 : 2, (m.spend / axTop) * 100)}%` }} />
+              <i className="tick" style={{ bottom: `${Math.min(99, (m.income / axTop) * 100)}%` }} />
+            </button>
+          );
+        })}
       </div>
       <div className="tlmonths" aria-hidden="true">
         {tl.map((m) => <span key={m.month}>{m.month.slice(5) === '01' ? m.month.slice(2, 4) : monthShort(m.month).slice(0, 1).toUpperCase()}</span>)}
@@ -479,7 +494,23 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         </div>
         <span>{periodLabel}</span>
       </div>
-      <p className="tlcap"><span><b className="bar" />Dépenses</span><span><b className="line" />Gains</span><span className="hint">Glisse sur les barres pour choisir une période</span></p>
+      {(() => {
+        const sel = tl.filter((m) => shownMonths.has(m.month) && (m.spend > 0 || m.income > 0));
+        const one = hov !== null ? tl[hov] : null;
+        const n = Math.max(sel.length, 1);
+        const g = one ? one.income : sel.reduce((t, m) => t + m.income, 0) / n;
+        const d = one ? one.spend : sel.reduce((t, m) => t + m.spend, 0) / n;
+        const r = g - d;
+        return (
+          <p className="tlread" aria-live="polite">
+            <b>{one ? monthName(one.month) : `Moyenne mensuelle, ${periodLabel}`}</b>
+            <span>Gains <strong>{money(g)}</strong></span>
+            <span>Dépenses <strong>{money(d)}</strong></span>
+            <span className={r >= 0 ? 'pos' : 'neg'}>{r >= 0 ? 'Reste' : 'Déficit'} <strong>{money(Math.abs(r))}</strong></span>
+          </p>
+        );
+      })()}
+      <p className="tlcap"><span><b className="bar" />Dépenses</span><span><b className="bar over" />Dépenses au-dessus des gains</span><span><b className="gain" />Gains</span><span><b className="avg" />Moyenne 3 mois</span><span className="hint">Glisse pour choisir une période</span></p>
     </div>
   );
   const Cmp = ({ now, before, goodUp = false }: { now: number | null; before: number | null; goodUp?: boolean }) => {
@@ -808,7 +839,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
 
           {tab === 'mila' && state.mila ? (() => {
             const mv = state.mila;
-            const FACTOR = milaSpan === 'annee' ? 10.5 : 1;
+            const FACTOR = unit === 'an' ? 10.5 : 1;
             const MAP: Record<string, [string, string]> = { loyer: ['Logement', 'logement'], ecole: ['École', 'enfants'], nourriture: ['Repas et courses', 'alimentation'], alimentation: ['Repas et courses', 'alimentation'], restaurants: ['Repas et courses', 'alimentation'], sante: ['Santé', 'sante'] };
             const acc: Record<string, { label: string; cat: string; total: number; perMonth: number; count: number }> = {};
             const put = (key: string, x: { total: number; perMonth: number; count: number }) => {
@@ -825,12 +856,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             const mx = Math.max(1, ...rows.map((x) => x.perMonth * FACTOR));
             return (
               <section className="immo">
-                <div className="seg" role="group" aria-label="Période">
-                  <button className={milaSpan === 'mois' ? 'on' : ''} onClick={() => setMilaSpan('mois')}>Par mois</button>
-                  <button className={milaSpan === 'annee' ? 'on' : ''} onClick={() => setMilaSpan('annee')}>Année scolaire</button>
-                </div>
+                <p className="unitcap">{unit === 'an' ? 'Année scolaire: 10,5 mois, de la rentrée de fin août à fin juin' : 'Moyenne par mois, hors vacances d’été'}</p>
                 <div className="inds big">
-                  <span className="ind"><Home size={18} strokeWidth={1.6} /><b>{money(total)}</b><small>{milaSpan === 'mois' ? 'par mois en moyenne' : 'prévus sur l’année scolaire'}</small></span>
+                  <span className="ind"><Home size={18} strokeWidth={1.6} /><b>{money(total)}</b><small>{unit === 'mois' ? 'par mois en moyenne' : 'prévus sur l’année scolaire'}</small></span>
                   <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(mv.cout.total)}</b><small>déjà payé depuis le 17 août</small></span>
                   <span className="ind"><Landmark size={18} strokeWidth={1.6} /><b>{money(left)}</b><small>encore à prévoir jusqu’à fin juin</small></span>
                 </div>

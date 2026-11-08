@@ -5,7 +5,7 @@ import { claude, usageSummary, capChf } from './usage';
 import { CATEGORIES, applySignatures, buildReport, pairInternalTransfers, parseStatement } from './statements';
 import { classifyUnknown } from './statements-ai';
 import { proposeGap } from './statements-propose';
-import { addEstimate, setBiens, budgetView, labelTransactions, removeEstimate, setMinorUnknownToOther, storeStatements } from './budget';
+import { addEstimate, setBiens, budgetView, labelTransactions, removeEstimate, setMinorUnknownToOther, storeStatements, type BudgetMonth } from './budget';
 import { milaView } from './mila';
 import { classifyStored } from './budget-ai';
 import { getFournisseurs, recurringView, setFournisseurs } from './recurring';
@@ -224,10 +224,80 @@ function coachContext(name: DbName): string {
       : ['- aucun']),
     'Projets:',
     ...s.goals.map((g) => `- ${g.label}: échéance ${sn.goals.find((x) => x.key === g.key)?.targetYear}, coût ≈ ${g.costInMonthsOfLife.toFixed(1)} mois de vie, financé à ${pct(g.funded)}`),
-    'Notes de contexte (texte libre saisi par l’utilisateur): ' + (s.notes.map((n) => n.text).join(' | ') || 'aucune'),
+    ...budgetCoachLines(ledger(name)),
     'Informations manquantes: ' + (s.gaps.slice(0, 4).map((g) => g.title).join(' | ') || 'aucune'),
   ];
   return lines.join('\n');
+}
+
+/**
+ * Budget transmis au coach: uniquement des proportions et des ratios sur les 12 derniers mois complets.
+ * Jamais un montant en francs, jamais un nom de fournisseur ni une ligne de relevé.
+ */
+function budgetCoachLines(l: Ledger): string[] {
+  const pct = (x: number) => `${Math.round(x * 100)} %`;
+  const b = budgetView(l);
+  const used: BudgetMonth[] = b.months.filter((m) => !m.partial).slice(-12);
+  if (used.length < 3) return ['Budget: pas assez de mois lus pour en tirer des proportions.'];
+  const sum = (f: (m: BudgetMonth) => number) => used.reduce((t, m) => t + f(m), 0);
+  const inc = sum((m) => m.income);
+  const sp = sum((m) => m.spend);
+  const sv = sum((m) => m.saved);
+  // Un mois déficitaire est souvent un mois d'impôts ou d'intérêts hypothécaires semestriels: on mesure donc aussi le mois courant (médiane)
+  // et le total sans les trois mois les plus chargés, pour ne pas faire passer une charge ponctuelle pour un déséquilibre.
+  const deficits = used.filter((m) => m.income > 0 && m.spend > m.income).length;
+  const ratios = used.filter((m) => m.income > 0).map((m) => m.spend / m.income).sort((a, b) => a - b);
+  const median = ratios.length ? ratios[Math.floor(ratios.length / 2)] : null;
+  const heavy = [...used].sort((a, b) => b.spend - a.spend).slice(0, 3);
+  const incLight = inc - heavy.reduce((t, m) => t + m.income, 0);
+  const spLight = sp - heavy.reduce((t, m) => t + m.spend, 0);
+  const h = Math.floor(used.length / 2);
+  const avg = (a: BudgetMonth[]) => a.reduce((t, m) => t + m.spend, 0) / Math.max(a.length, 1);
+  const before = avg(used.slice(0, h));
+  const trend = before > 0 ? avg(used.slice(h)) / before - 1 : null;
+  const lines: string[] = [
+    `Budget (${used.length} derniers mois complets): sur l'ensemble, dépenses = ${inc > 0 ? pct(sp / inc) : '?'} des gains; mis de côté = ${inc > 0 ? pct(sv / inc) : '?'} des gains.`,
+    `Mois courant: dépenses = ${median === null ? '?' : pct(median)} des gains (médiane); sans les 3 mois les plus chargés, ${incLight > 0 ? pct(spLight / incLight) : '?'}. ${deficits} mois sur ${used.length} dépassent les gains, en général à cause de charges ponctuelles (impôts, intérêts hypothécaires semestriels), pas d'un déséquilibre régulier.`,
+    `Tendance des dépenses, dernier semestre contre le précédent: ${trend === null ? 'inconnue' : (trend >= 0 ? '+' : '') + pct(trend)}.`,
+  ];
+  const cats = new Map<string, number>();
+  for (const m of used) for (const [k, v] of Object.entries(m.byCategory)) cats.set(k, (cats.get(k) ?? 0) + v);
+  const catTotal = [...cats.values()].reduce((t, v) => t + Math.max(v, 0), 0) || 1;
+  const top = [...cats.entries()].filter(([, v]) => v > 0).sort((p, q) => q[1] - p[1]).slice(0, 10);
+  if (top.length) lines.push('Dépenses par catégorie (part des dépenses): ' + top.map(([k, v]) => `${k} ${pct(v / catTotal)}`).join(', ') + '.');
+  // Immobilier: ce que la régie verse rapporté au loyer prévu par les baux, et ce que tu paies toi-même.
+  const baux = b.baux ?? [];
+  const contractual = (bien: string) => used.reduce((t, m) => {
+    const [y, mo] = m.month.split('-').map(Number);
+    const dim = new Date(y, mo, 0).getDate();
+    const s0 = Date.UTC(y, mo - 1, 1);
+    const e0 = Date.UTC(y, mo - 1, dim);
+    return t + baux.filter((x) => x.bien === bien).reduce((u, x) => {
+      const f = Date.parse(x.from + 'T00:00:00Z');
+      const g = x.to ? Date.parse(x.to + 'T00:00:00Z') : Infinity;
+      const days = Math.max(0, Math.round((Math.min(e0, g) - Math.max(s0, f)) / 86400000) + 1);
+      return u + ((x.net + x.charges) * days) / dim;
+    }, 0);
+  }, 0);
+  const biens = [...new Set(used.flatMap((m) => Object.keys(m.immo ?? {})))];
+  if (biens.length) {
+    lines.push('Biens locatifs (12 derniers mois):');
+    for (const bien of biens) {
+      const loy = used.reduce((t, m) => t + (m.immo?.[bien]?.loyers ?? 0), 0);
+      const chg = used.reduce((t, m) => t + (m.immo?.[bien]?.charges ?? 0), 0);
+      const none = used.filter((m) => (m.immo?.[bien]?.loyers ?? 0) <= 0).length;
+      const c = contractual(bien);
+      const parts = [
+        c > 0 ? `versements de la régie = ${pct(loy / c)} du loyer prévu par les baux` : 'baux non saisis',
+        loy > 0 ? `charges payées par le propriétaire = ${pct(chg / loy)} des versements` : 'aucun versement',
+        none > 0 ? `${none} mois sans versement` : '',
+      ].filter(Boolean);
+      lines.push(`- ${bien}: ${parts.join(', ')}`);
+    }
+  }
+  const mila = milaView(l);
+  if (mila && sp > 0) lines.push(`Mila (études et logement): coût moyen ≈ ${pct(mila.cout.perMonth / (sp / used.length))} des dépenses mensuelles.`);
+  return lines;
 }
 
 function coachSystem(name: DbName, passages = ''): string {

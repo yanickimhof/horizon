@@ -312,7 +312,7 @@ table.cmp tr.tot td { font-weight: 500; }
 .tlcap { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin: 8px 0 0; }
 .tlcap span { display: inline-flex; align-items: center; gap: 6px; }
 .tlcap b.bar { width: 10px; height: 10px; border-radius: 2px; background: var(--k1); }
-.tlcap b.line { width: 12px; height: 2px; background: var(--pos); }
+.tlcap b.gain { width: 12px; height: 2px; background: var(--pos); }
 .tlcap .hint { margin-left: auto; font-style: italic; }
 .legend i.lg.b { background: var(--ink); }
 
@@ -339,3 +339,25 @@ table.cmp tr.tot td { font-weight: 500; }
 .immotbl tr.clk:hover td { background: var(--track); }
 .immotbl tr.clk.on td { background: var(--track); }
 .immotbl tr.tot td { font-weight: 500; border-top: 1px solid var(--line); }
+
+/* Graphique du haut, refonte 2026-11-08: axe, couleur selon le déficit, moyenne mobile, lecture au survol */
+.tlbars { position: relative; height: 150px; gap: 4px; margin-top: 6px; padding-left: 0; }
+.tlgrid { position: absolute; inset: 0; pointer-events: none; }
+.tlgrid span { position: absolute; left: 0; right: 0; border-top: 1px dashed color-mix(in srgb, var(--ink) 12%, transparent); height: 0; }
+.tlgrid em { position: absolute; right: 0; top: -9px; font-style: normal; font-size: 10px; color: var(--ink-2); background: var(--bg, transparent); padding-left: 3px; }
+.tlavg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.tlavg polyline { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 3 3; opacity: .55; }
+.tlbars button.none i.dep { display: none; }
+.tlbars button.hov i.dep { filter: brightness(.9); }
+.tlbars button.on.over i.dep { background: var(--neg); }
+.tlbars button i.tick { left: -2px; right: -2px; height: 3px; }
+.tlbars button.on i.tick { background: var(--pos); }
+.tlread { display: flex; gap: 16px; flex-wrap: wrap; align-items: baseline; margin: 10px 0 2px; font-size: 13px; color: var(--ink-2); }
+.tlread b { color: var(--ink); font-weight: 500; }
+.tlread strong { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+.tlread .pos strong { color: var(--pos); }
+.tlread .neg strong { color: var(--neg); }
+.tlcap b.bar.over { background: var(--neg); }
+.tlcap b.avg { width: 12px; height: 0; border-top: 2px dashed color-mix(in srgb, var(--ink) 55%, transparent); background: none; }
+.tlmonths { margin-top: 4px; }
+.tlmonths, .tlbars { gap: 4px; }
