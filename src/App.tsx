@@ -112,10 +112,12 @@ export function App() {
           ))}
         </nav>
         <div className="tools">
-          <div className="seg icons small" role="group" aria-label="Jeu de données">
-            <button className={db === 'demo' ? 'on' : ''} aria-label="Exemple" title="Exemple" onClick={() => switchDb('demo')}><FlaskConical size={18} strokeWidth={1.5} /></button>
-            <button className={db === 'real' ? 'on' : ''} aria-label="Mes données" title="Mes données" onClick={() => switchDb('real')}><UserRound size={18} strokeWidth={1.5} /></button>
-          </div>
+          {db === 'demo' ? (
+            <div className="seg icons small" role="group" aria-label="Jeu de données">
+              <button className="on" aria-label="Exemple" title="Exemple" onClick={() => switchDb('demo')}><FlaskConical size={18} strokeWidth={1.5} /></button>
+              <button aria-label="Mes données" title="Mes données" onClick={() => switchDb('real')}><UserRound size={18} strokeWidth={1.5} /></button>
+            </div>
+          ) : null}
           <button className={'icon-btn' + (reveal ? ' on' : '')} aria-pressed={reveal} aria-label={reveal ? 'Masquer les montants' : 'Afficher les montants'} title={reveal ? 'Masquer les montants' : 'Afficher les montants'} onClick={() => setReveal(!reveal)}>
             {reveal ? <Eye {...ICON} /> : <EyeOff {...ICON} />}
           </button>

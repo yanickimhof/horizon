@@ -106,3 +106,16 @@ Quand le budget est fiable, les dépenses habituelles servent de base aux module
 Quand tu classes une ligne, l'outil retient le fournisseur et l'applique aux lignes semblables, passées et à venir. Pour un libellé trop générique (un virement, un paiement par carte sans nom), seule la ligne exacte est retenue. Tes corrections ne sont jamais écrasées par un reclassement automatique.
 
 Le tableau « Dépenses par catégorie » affiche uniquement les catégories où tu as des dépenses, par année ou par mois.
+
+## Réglages propres à ta situation
+
+Rien de personnel n'est dans le code: tout vit dans la base locale (`data/`, jamais versionnée), table `settings`.
+
+| Réglage | Rôle |
+|---|---|
+| `budget.biens` | quel fournisseur (régie, copropriété, banque du prêt) appartient à quel bien |
+| `budget.fournisseurs` | noms lisibles et catégories imposées pour certains fournisseurs |
+| `budget.uniques`, `budget.imputation`, `budget.repartitions` | ce qui sort du rythme habituel, l'année à laquelle une dépense appartient, la répartition d'un versement entre biens |
+| `mila.config` | suivi des frais d'un enfant hébergé hors du foyer (début, règles de repérage, lieux comptés, solde d'ouverture). Sans ce réglage, l'onglet n'apparaît pas |
+
+Pour reprendre l'outil, copie le modèle de `mila.config` (voir `server/mila.ts`) ou ignore cet onglet.

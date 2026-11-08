@@ -10,31 +10,37 @@ export interface MilaRule {
   from?: string;
 }
 
-/** La comptabilité de Mila commence le 17 août 2026; avant, seules les dépenses clairement liées au CPNV comptent. */
-export const MILA_START = '2026-08-17';
-const WIDE_START = '2025-01-01';
-/** Arrivée sur place: les moyennes mensuelles se calculent depuis ce mois. */
-export const MILA_SITE_MONTH = '2026-09';
-/** Début du relevé de son compte Migros: les virements de la famille à partir de cette date sont du financement, pas un coût de plus. */
-/** Solde de son compte au 1er août 2026, d'après le relevé. */
-export const MILA_SOLDE_INITIAL = 35.76;
-export const MILA_ACCOUNT_START = '2026-08-01';
+/**
+ * Réglage « mila.config »: tout ce qui est propre à ta situation (début de la comptabilité, règles de repérage,
+ * lieux comptés dans son compte, solde d'ouverture) vit dans la base, jamais dans le code. Sans ce réglage, la vue n'existe pas.
+ */
+export interface MilaConfig {
+  /** Début de la comptabilité (AAAA-MM-JJ). */
+  start: string;
+  /** Premier mois plein, pour les moyennes mensuelles (AAAA-MM). */
+  siteMonth: string;
+  /** Solde de son compte à l'ouverture de la période. */
+  openingBalance: number;
+  /** Expression régulière des achats de son compte qui comptent (lieux, école). */
+  onSite: string;
+  /** Libellé des virements de la famille vers son compte. */
+  funding: string;
+  rules: MilaRule[];
+}
 
-export const DEFAULT_MILA_RULES: MilaRule[] = [
-  // Clairement pour le CPNV: compté même avant le 17 août (fournitures, frais d'école).
-  { kind: 'ecole', re: 'cpnv|cataropro', categories: ['enfants', 'quotidien'] },
-  { kind: 'ecole', re: 'payot', categories: ['enfants'] },
-  // Le reste commence le 17 août.
-  { kind: 'ecole', re: 'payot', categories: ['quotidien'], from: MILA_START },
-  { kind: 'loyer', re: 'balcon du jura', categories: ['enfants'], from: MILA_START },
-  { kind: 'poche', re: '^mila imhof, all', from: MILA_START },
-  { kind: 'virement', re: 'transfert mila', from: MILA_START },
-  { kind: 'nourriture', re: 'ste-croix|sainte-croix|yverdon', categories: ['alimentation', 'restaurants'], from: MILA_START },
-];
+export function milaConfig(l: Ledger): MilaConfig | null {
+  try {
+    const c = JSON.parse(l.getSetting('mila.config') || 'null') as MilaConfig | null;
+    return c && c.start && Array.isArray(c.rules) && c.rules.length > 0 ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+const WIDE_START = '2000-01-01';
 
 /** Catégories des écritures du compte de Mila, d'après le libellé (la première qui correspond gagne). */
 const ACCOUNT_RULES: { cat: string; label: string; re: string }[] = [
-  { cat: 'versement', label: 'Versements de la famille', re: 'transfert imhof' },
   { cat: 'ecole', label: 'École', re: 'cpnv|centre professionnel|payot|cataro' },
   { cat: 'transport', label: 'Transports', re: 'fairtiq|cff|sbb|tl ' },
   { cat: 'sante', label: 'Pharmacie', re: 'pharmacie' },
@@ -44,9 +50,6 @@ const ACCOUNT_RULES: { cat: string; label: string; re: string }[] = [
   { cat: 'alimentation', label: 'Courses et snacks', re: 'coop|migros|denner|volg|spar|aldi|lidl' },
 ];
 const AUTRE = 'Autres achats';
-/** Dans son compte, seuls comptent les achats à Yverdon et Ste-Croix, et ce qui est clairement pour le CPNV. */
-const ON_SITE = 'ste-croi|sainte-croix|yverdon|denner satellit|coop pronto 3650|pharmacie|cpnv|centre professionnel';
-
 export interface MilaLine {
   key: string;
   label: string;
@@ -84,15 +87,6 @@ export interface MilaView {
   cout: { total: number; perMonth: number };
 }
 
-export function milaRules(l: Ledger): MilaRule[] {
-  try {
-    const r = JSON.parse(l.getSetting('mila.rules') || '[]') as MilaRule[];
-    return r.length ? r : DEFAULT_MILA_RULES;
-  } catch {
-    return DEFAULT_MILA_RULES;
-  }
-}
-
 function ensureAccount(l: Ledger): void {
   l.raw.exec('CREATE TABLE IF NOT EXISTS mila_compte (id TEXT PRIMARY KEY, date TEXT NOT NULL, amount REAL NOT NULL, label TEXT NOT NULL)');
 }
@@ -118,23 +112,26 @@ function add(map: Map<string, { label: string; byMonth: Map<string, number>; cou
   map.set(key, e);
 }
 
-export function milaView(l: Ledger, now: Date = new Date()): MilaView {
+export function milaView(l: Ledger, now: Date = new Date()): MilaView | null {
+  const cfg = milaConfig(l);
+  if (!cfg) return null;
   init(l);
   ensureAccount(l);
-  const rules = milaRules(l);
+  const rules = cfg.rules;
   const current = now.toISOString().slice(0, 7);
   const rows = l.raw
     .prepare("SELECT date, amount, label, category FROM budget_txs WHERE date >= ? AND amount < 0 AND category <> 'doublon' AND category <> 'interne'")
     .all(WIDE_START) as unknown as { date: string; amount: number; label: string; category: string }[];
 
-  const accAll = l.raw.prepare('SELECT date, amount, label FROM mila_compte WHERE date >= ? ORDER BY date, id').all(MILA_START) as unknown as { date: string; amount: number; label: string }[];
-  const onSite = new RegExp(ON_SITE, 'i');
-  const acc = accAll.filter((t) => t.amount > 0 ? /transfert imhof/i.test(t.label) : onSite.test(t.label));
+  const accAll = l.raw.prepare('SELECT date, amount, label FROM mila_compte WHERE date >= ? ORDER BY date, id').all(cfg.start) as unknown as { date: string; amount: number; label: string }[];
+  const onSite = new RegExp(cfg.onSite, 'i');
+  const funding = new RegExp(cfg.funding, 'i');
+  const acc = accAll.filter((t) => t.amount > 0 ? funding.test(t.label) : onSite.test(t.label));
   const hors = r2(accAll.filter((t) => t.amount < 0 && !onSite.test(t.label)).reduce((t, x) => t - x.amount, 0));
 
   // Mois pleins écoulés depuis l'arrivée sur place (le mois en cours est exclu).
   const fullMonths: string[] = [];
-  for (let y = 2026, m = 9; ; m++) {
+  for (let y = Number(cfg.siteMonth.slice(0, 4)), m = Number(cfg.siteMonth.slice(5)); ; m++) {
     if (m > 12) { m = 1; y++; }
     const k = `${y}-${String(m).padStart(2, '0')}`;
     if (k >= current) break;
@@ -166,8 +163,8 @@ export function milaView(l: Ledger, now: Date = new Date()): MilaView {
     const sorties = new Map<string, { label: string; byMonth: Map<string, number>; count: number }>();
     for (const t of acc) {
       const m = t.date.slice(0, 7);
-      const rule = ACCOUNT_RULES.find((x) => new RegExp(x.re, 'i').test(t.label));
-      const cat = rule?.cat ?? 'autre';
+      const rule = funding.test(t.label) ? undefined : ACCOUNT_RULES.find((x) => new RegExp(x.re, 'i').test(t.label));
+      const cat = funding.test(t.label) ? 'versement' : (rule?.cat ?? 'autre');
       if (t.amount > 0) {
         add(entrees, 'versement', 'Versements de la famille', m, t.amount);
       } else {
@@ -180,11 +177,11 @@ export function milaView(l: Ledger, now: Date = new Date()): MilaView {
     const totalEntrees = r2(entreesL.reduce((t, x) => t + x.total, 0));
     const totalSorties = r2(sortiesL.reduce((t, x) => t + x.total, 0));
     const bal = l.raw.prepare('SELECT COALESCE(SUM(amount), 0) AS s FROM mila_compte').get() as { s: number } | undefined;
-    const solde = r2(MILA_SOLDE_INITIAL + (bal?.s ?? 0));
+    const solde = r2(cfg.openingBalance + (bal?.s ?? 0));
     compte = {
       from: acc[0].date,
       to: acc[acc.length - 1].date,
-      soldeInitial: MILA_SOLDE_INITIAL,
+      soldeInitial: cfg.openingBalance,
       solde,
       entrees: entreesL,
       sorties: sortiesL,
@@ -197,8 +194,8 @@ export function milaView(l: Ledger, now: Date = new Date()): MilaView {
   }
 
   return {
-    from: MILA_START,
-    siteFrom: MILA_SITE_MONTH,
+    from: cfg.start,
+    siteFrom: cfg.siteMonth,
     fullMonths,
     famille: { couts: famCouts, epargne: lines(epargne, fullMonths, ['poche']), financement: lines(financement, fullMonths, ['virement']), total: famTotal, perMonth: famPerMonth },
     compte,

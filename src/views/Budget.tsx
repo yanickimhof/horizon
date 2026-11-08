@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type MouseEvent, type ReactElement } from 'react';
-import { ArrowDownRight, ArrowLeft, ArrowUpRight, Building2, FolderOpen, Home, Landmark, LayoutGrid, Repeat, ShoppingBasket, TrendingUp, Wallet, Zap } from 'lucide-react';
+import { useEffect, useMemo, useState, type PointerEvent as RPointerEvent, type ReactElement } from 'react';
+import { ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowUpRight, Building2, Calendar, CalendarRange, FolderOpen, Home, Landmark, LayoutGrid, Repeat, ShoppingBasket, TrendingUp, Wallet, Zap } from 'lucide-react';
 import { api, fmt, type Db, type RecurringView, type State, type WatchStatus } from '../api';
 import '../budget.css';
 
@@ -13,6 +13,10 @@ const CATS: [string, string][] = [
 ];
 const LABEL: Record<string, string> = { ...Object.fromEntries(CATS), inconnu: 'À identifier' };
 const CHOICES: [string, string][] = [...CATS, ['epargne', 'Épargne, prévoyance'], ['interne', 'Entre mes comptes']];
+
+/** Une couleur par catégorie, la même dans tous les graphiques (palette --k1 à --k10 dans budget.css). */
+const PALETTE: Record<string, string> = { logement: 'var(--k1)', travaux: 'var(--k1)', impots: 'var(--k9)', assurances: 'var(--k2)', voyages: 'var(--k2)', energie: 'var(--k3)', loisirs: 'var(--k3)', restaurants: 'var(--k4)', vehicule: 'var(--k5)', transports: 'var(--k5)', enfants: 'var(--k6)', vetements: 'var(--k6)', famille: 'var(--k7)', sante: 'var(--k7)', alimentation: 'var(--k8)', quotidien: 'var(--k10)', maison: 'var(--k10)' };
+const colorOf = (c: string) => PALETTE[c] ?? 'var(--k9)';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n > 1 ? many : one}`;
 
@@ -135,38 +139,6 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
     const z = pm[pm.length - 1];
     return a === z ? `${sh(a)} ${a.slice(0, 4)}` : `${sh(a)} à ${sh(z)} ${z.slice(0, 4)}`;
   };
-  const cmpData = useMemo(() => {
-    const full = b.months.filter((m) => !m.partial);
-    const last = full[full.length - 1];
-    if (!last) return null;
-    const y = Number(last.month.slice(0, 4));
-    const upto = last.month.slice(5);
-    const inPeriod = (m: { month: string }, yr: number) => m.month.startsWith(String(yr)) && m.month.slice(5) <= upto;
-    const A = full.filter((m) => inPeriod(m, y - 1));
-    const B = full.filter((m) => inPeriod(m, y));
-    const sum = (ms: typeof full, f: (m: (typeof full)[number]) => number) => ms.reduce((t, m) => t + f(m), 0);
-    const cats = [...new Set(full.flatMap((m) => Object.keys(m.byCategory)))];
-    const groups: [string, string[]][] = [
-      ['Structurel: peu de marge', ['impots', 'logement', 'assurances', 'energie', 'enfants', 'famille']],
-      ['Ajustable: on peut jouer dessus', cats.filter((c) => !['impots', 'logement', 'assurances', 'energie', 'enfants', 'famille', 'travaux'].includes(c))],
-      ['Travaux des biens', ['travaux']],
-    ];
-    const rows = groups.map(([name, keys]) => ({
-      name,
-      items: keys.map((k) => ({ k, a: sum(A, (m) => m.byCategory[k] ?? 0), b: sum(B, (m) => m.byCategory[k] ?? 0) })).filter((x) => Math.abs(x.a) + Math.abs(x.b) > 1).sort((p, q) => q.b - p.b),
-    }));
-    return {
-      label: `${rangeLabelFn(B.map((m) => m.month))} contre ${rangeLabelFn(A.map((m) => m.month))}`,
-      months: B.length,
-      years: [String(y - 1), String(y)] as [string, string],
-      income: [sum(A, (m) => m.income), sum(B, (m) => m.income)],
-      exceptional: [sum(A, (m) => m.exceptional), sum(B, (m) => m.exceptional)],
-      spend: [sum(A, (m) => m.spend), sum(B, (m) => m.spend)],
-      oneOff: [sum(A, (m) => m.oneOff), sum(B, (m) => m.oneOff)],
-      saved: [sum(A, (m) => m.saved), sum(B, (m) => m.saved)],
-      rows,
-    };
-  }, [b.months]);
   const [catView, setCatView] = useState<'moy' | 'total'>('moy');
   const worksByBien = useMemo(() => {
     const t: Record<string, number> = {};
@@ -298,9 +270,13 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   }, [period, db, state.budget.count, state.fournisseurs, state.recurring]);
   const rec = period === '12' || !recAlt ? state.recurring : recAlt;
   const [open, setOpen] = useState('');
-  const [tab, setTab] = useState<'synthese' | 'revient' | 'quotidien' | 'exceptionnel' | 'immo' | 'mila' | 'compare'>('synthese');
+  const [tab, setTab] = useState<'synthese' | 'revient' | 'quotidien' | 'immo' | 'mila' | 'compare'>('synthese');
+  const [milaSpan, setMilaSpan] = useState<'mois' | 'annee'>('mois');
   const [more, setMore] = useState(false);
   const monthsN = Math.max(rec.months.length, 1);
+  // Bascule discrète mois / année: tous les montants de synthèse sont des totaux de période ramenés au mois ou à l'année.
+  const [unit, setUnit] = useState<'mois' | 'an'>('mois');
+  const sc = (v: number) => (v * (unit === 'mois' ? 1 : 12)) / monthsN;
   const bienNames = [...new Set([...immoRows.map(([k]) => k), ...worksByBien.map(([k]) => k), ...rec.works.map((w) => w.bien ?? 'À rattacher')])];
   const monthShort = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('fr-CH', { month: 'short' }).replace('.', '');
   const monthFr = (m: string) => `${monthShort(m)} ${m.slice(0, 4)}`;
@@ -317,10 +293,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const resteM = (rec.income - spendYear) / monthsN;
   const barMax = Math.max(rec.income, spendYear, 1);
   const parts: { k: typeof tab; label: string; v: number; color: string }[] = [
-    { k: 'revient', label: 'Ce qui revient', v: rec.totals.recurring, color: 'var(--c-cash)' },
-    { k: 'quotidien', label: 'Le quotidien', v: rec.totals.daily, color: 'var(--c-securities)' },
-    { k: 'exceptionnel', label: 'Ponctuel', v: rec.totals.exceptional, color: 'var(--c-real_estate)' },
-    { k: 'immo', label: 'Travaux et frais des biens', v: rec.totals.works, color: 'var(--c-pension)' },
+    { k: 'revient', label: 'Charges et impôts', v: rec.totals.recurring + rec.totals.exceptional, color: 'var(--k1)' },
+    { k: 'quotidien', label: 'Le quotidien', v: rec.totals.daily, color: 'var(--k8)' },
+    { k: 'immo', label: 'Travaux sur les biens', v: rec.totals.works, color: 'var(--k6)' },
   ];
   const pct = (t: number | null) => (t === null ? '' : `${t > 0 ? '+' : ''}${Math.round(t * 100)} %`);
   const Trend = ({ t, d }: { t: number | null; d: number | null }) => (t !== null && d !== null && Math.abs(t) >= 0.1 && Math.abs(d) >= 100 ? <span className={'chip ' + (t > 0 ? 'up' : 'down')} title={`Par rapport aux mêmes mois un an plus tôt (${rec.comparedMonths} mois)`}>{pct(t)}</span> : null);
@@ -356,76 +331,73 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const nrm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const factsAssets = state.facts.filter((f) => f.key.startsWith('asset:') && f.data.class === 'real_estate');
   const factsDebts = state.facts.filter((f) => f.key.startsWith('liability:') && typeof f.data.balance === 'number');
-  const factor = 12 / Math.max(used.length, 1);
-  type Prop = { amort: number; bien: string; home: boolean; commune: string; valeur: number | null; valeurNote: string; valeurLow: number | null; valeurHigh: number | null; dette: number; taux: number | null; loyers: number; charges: number; interets: number; travaux: number; autres: number; rend: number | null; cash: number; ltv: number | null; items: { n: string; v: number }[] };
+  const mois = Math.max(used.length, 1);
+  type Prop = { bien: string; home: boolean; orphan: boolean; commune: string; valeur: number | null; valeurNote: string; valeurLow: number | null; valeurHigh: number | null; dette: number; taux: number | null; amort: number; loyers: number; moisLoyer: number; charges: number; interets: number; autres: number; travaux: number; rend: number | null; items: { n: string; v: number }[] };
+  // Tous les montants d'un bien sont des totaux sur la période choisie; l'affichage les ramène au mois ou à l'année avec sc().
   const props: Prop[] = bienNames.map((bien) => {
     const v = Object.fromEntries(immoRows)[bien] ?? { loyers: 0, charges: 0 };
     const asset = factsAssets.find((f) => nrm(String(f.data.label ?? '')).includes(nrm(bien)));
     const debts = asset ? factsDebts.filter((d) => d.data.securedBy === asset.key) : [];
     const dette = debts.reduce((t, d) => t + Number(d.data.balance), 0);
-    const amort = debts.reduce((t, d) => t + Number(d.data.amortization ?? 0), 0);
+    const amortYear = debts.reduce((t, d) => t + Number(d.data.amortization ?? 0), 0);
     const taux = dette > 0 ? debts.reduce((t, d) => t + Number(d.data.balance) * Number(d.data.rate ?? 0), 0) / dette : null;
     const valeur = asset && typeof asset.data.value === 'number' ? Number(asset.data.value) : null;
     const home = (b.homes ?? []).includes(bien) || asset?.data.subtype === 'home';
     const items = rec.recurring.filter((x) => x.bien === bien);
-    const interets = items.filter((x) => /^int[ée]r[êe]ts/i.test(x.label)).reduce((t, x) => t + x.perYear, 0);
-    const travaux = rec.works.filter((w) => (w.bien ?? 'À rattacher') === bien).reduce((t, w) => t + w.amount, 0);
+    const interets = Math.min(v.charges, items.filter((x) => /^int[ée]r[êe]ts/i.test(x.label)).reduce((t, x) => t + x.perYear, 0));
+    const travaux = Math.min(Math.max(0, v.charges - interets), rec.works.filter((w) => (w.bien ?? 'À rattacher') === bien).reduce((t, w) => t + w.amount, 0));
     const autres = Math.max(0, v.charges - interets - travaux);
-    const noi = (v.loyers - autres) * factor;
+    const moisLoyer = used.filter((m) => (m.immo?.[bien]?.loyers ?? 0) > 0).length;
     return {
-      amort, bien, home, commune: String(asset?.data.commune ?? ''), valeur, valeurNote: String(asset?.data.valueNote ?? ''), valeurLow: typeof asset?.data.estimateLow === 'number' ? Number(asset.data.estimateLow) : null, valeurHigh: typeof asset?.data.estimateHigh === 'number' ? Number(asset.data.estimateHigh) : null, dette, taux, loyers: v.loyers, charges: v.charges, interets, travaux, autres,
-      rend: valeur && !home ? noi / valeur : null,
-      cash: (v.loyers - v.charges + travaux) / Math.max(used.length, 1),
-      ltv: valeur && dette > 0 ? dette / valeur : null,
+      bien, home, orphan: bien === 'Non réparti' || bien === 'À rattacher', commune: String(asset?.data.commune ?? ''), valeur, valeurNote: String(asset?.data.valueNote ?? ''),
+      valeurLow: typeof asset?.data.estimateLow === 'number' ? Number(asset.data.estimateLow) : null, valeurHigh: typeof asset?.data.estimateHigh === 'number' ? Number(asset.data.estimateHigh) : null,
+      dette, taux, amort: (amortYear * mois) / 12, loyers: v.loyers, moisLoyer, charges: v.charges, interets, autres, travaux,
+      rend: valeur && !home && moisLoyer === mois ? ((v.loyers - autres) * 12) / mois / valeur : null,
       items: [...items.map((x) => ({ n: x.label, v: x.perYear })), ...rec.works.filter((w) => (w.bien ?? 'À rattacher') === bien).map((w) => ({ n: `${w.label}, ${dateFr(w.date)}`, v: w.amount }))],
     };
   });
   const homeProps = props.filter((p) => p.home);
   const invProps = props.filter((p) => !p.home);
-  const invSummary = (() => {
-    const withVal = invProps.filter((p) => p.valeur);
-    if (invProps.length === 0) return null;
-    const val = withVal.reduce((t, p) => t + (p.valeur ?? 0), 0);
-    const noi = withVal.reduce((t, p) => t + (p.rend ?? 0) * (p.valeur ?? 0), 0);
-    const debt = withVal.reduce((t, p) => t + p.dette, 0);
-    const rend = val > 0 ? noi / val : null;
-    const cash = invProps.reduce((t, p) => t + p.cash, 0);
-    const ltv = val > 0 && debt > 0 ? debt / val : null;
-    const tone = { r: rend === null ? '' : rend >= 0.03 ? 'ok' : rend >= 0.02 ? 'mid' : 'bad', c: cash >= 0 ? 'ok' : 'bad', l: ltv === null ? '' : ltv <= 0.6 ? 'ok' : ltv <= 0.75 ? 'mid' : 'bad' };
-    return { rend, cash, ltv, tone };
-  })();
   const renderProp = (p: Prop) => {
-    const tr = p.rend === null ? '' : p.rend >= 0.03 ? 'ok' : p.rend >= 0.02 ? 'mid' : 'bad';
-    const tl2 = p.ltv === null ? '' : p.ltv <= 0.6 ? 'ok' : p.ltv <= 0.75 ? 'mid' : 'bad';
-    const monthlyCost = (p.charges) / Math.max(used.length, 1);
+    const res = p.loyers - p.charges;
+    const after = res - p.amort;
+    const ltv = p.valeur && p.dette > 0 ? p.dette / p.valeur : null;
+    const li = (label: string, v: number, cls = '') => <li className={cls} key={label}><span>{label}</span><b>{money(sc(v))}</b></li>;
     return (
       <details key={p.bien} className="prop">
         <summary>
-          <span className="pn">{p.bien}{p.commune ? <small>{p.commune}</small> : null}</span>
-          {p.home ? (
-            <span className="inds">
-              <span className="ind"><Home size={16} strokeWidth={1.6} /><b>{money(monthlyCost)}</b><small>par mois</small></span>
-              <span className={'ind ' + tl2}><Landmark size={16} strokeWidth={1.6} /><b>{p.ltv !== null ? pctPlain(p.ltv) : '—'}</b><small>de dette</small></span>
-            </span>
-          ) : (
-            <span className="inds">
-              <span className={'ind ' + tr}><TrendingUp size={16} strokeWidth={1.6} /><b>{p.rend !== null ? pctPlain(p.rend) : '—'}</b><small>rendement</small></span>
-              <span className={'ind ' + (p.cash >= 0 ? 'ok' : 'bad')}><Wallet size={16} strokeWidth={1.6} /><b>{money(p.cash)}</b><small>par mois, hors travaux</small></span>
-              <span className={'ind ' + tl2}><Landmark size={16} strokeWidth={1.6} /><b>{p.ltv !== null ? pctPlain(p.ltv) : '—'}</b><small>de dette</small></span>
-            </span>
-          )}
+          <span className="pn">{p.orphan ? 'Non rattaché à un bien' : p.bien}{p.commune ? <small>{p.commune}</small> : null}</span>
+          <span className="inds">
+            {p.home ? (
+              <span className="ind"><Home size={16} strokeWidth={1.6} /><b>{money(sc(p.charges))}</b><small>{unit === 'mois' ? 'de coût par mois' : 'de coût par an'}</small></span>
+            ) : (
+              <span className={'ind ' + (res >= 0 ? 'ok' : 'bad')}><Wallet size={16} strokeWidth={1.6} /><b>{money(sc(res))}</b><small>{unit === 'mois' ? 'de résultat par mois' : 'de résultat par an'}</small></span>
+            )}
+          </span>
         </summary>
+        {p.orphan ? <p className="muted small">Ces montants ne sont attribués à aucun bien. Ils sont comptés dans le total des investissements, mais fausseront un bien tant qu’ils ne sont pas rattachés (Documents, « Mes biens »).</p> : null}
         <ul className="mini">
-          {!p.home ? <li><span>Loyers reçus</span><b>{money(p.loyers)}</b></li> : null}
-          {p.items.map((it, i) => <li key={i}><span>{it.n}</span><b>{money(it.v)}</b></li>)}
-          {!p.home ? <li className="net"><span>Net hors travaux</span><b>{money(p.loyers - p.charges + p.travaux)}</b></li> : null}
-          {p.travaux > 0 ? <li className="muted small"><span>Travaux ponctuels, non comptés dans le cash-flow</span><b>{money(p.travaux)}</b></li> : null}
+          {!p.home ? li('Loyers nets reçus', p.loyers) : null}
+          {p.interets > 0 ? li('Intérêts hypothécaires', -p.interets) : null}
+          {p.autres > 0 ? li(p.home ? 'Charges et frais' : 'Charges (copropriété, assurances, taxes)', -p.autres) : null}
+          {p.travaux > 0 ? li('Travaux', -p.travaux) : null}
+          {p.home ? li('Coût total', p.charges, 'net') : li('Résultat avant amortissement', res, 'net')}
+          {!p.home && p.amort > 0 ? li('Capital remboursé à la banque (amortissement)', -p.amort, 'muted small') : null}
+          {!p.home && p.amort > 0 ? li('Résultat après amortissement', after, 'net') : null}
           {p.valeur ? <li className="sep"><span>Valeur estimée</span><b>{money(p.valeur)}</b></li> : null}
-          {p.valeur && (p.valeurLow !== null && p.valeurHigh !== null) ? <li className="muted small"><span>Fourchette</span><b>{money(p.valeurLow)} à {money(p.valeurHigh)}</b></li> : null}
+          {p.valeur && p.valeurLow !== null && p.valeurHigh !== null ? <li className="muted small"><span>Fourchette</span><b>{money(p.valeurLow)} à {money(p.valeurHigh)}</b></li> : null}
           {p.valeur && p.valeurNote ? <li className="muted small"><span>{p.valeurNote}</span></li> : null}
-          {p.amort > 0 ? <li className="muted small"><span>Amortissement annuel</span><b>{money(p.amort)}</b></li> : null}
           {p.dette > 0 ? <li><span>Hypothèque{p.taux !== null ? `, taux moyen ${pctPlain(p.taux)}` : ''}</span><b>{money(p.dette)}</b></li> : null}
+          {p.valeur && p.dette > 0 ? <li><span>Fonds propres estimés</span><b>{money(p.valeur - p.dette)}{ltv !== null ? ` (dette ${pctPlain(ltv)})` : ''}</b></li> : null}
+          {p.rend !== null ? <li className="muted small"><span>Rendement net indicatif, avant intérêts et travaux</span><b>{pctPlain(p.rend)}</b></li> : null}
         </ul>
+        {!p.home && !p.orphan && p.moisLoyer < mois ? <p className="muted small">Loyers reçus sur {p.moisLoyer} mois seulement sur {mois}: le résultat est incomplet, rien n’est estimé.</p> : null}
+        {p.items.length > 0 ? (
+          <details className="manual">
+            <summary>Détail des charges</summary>
+            <ul className="mini sm">{p.items.map((it, i) => <li key={i}><span>{it.n}</span><b>{money(it.v)}</b></li>)}</ul>
+          </details>
+        ) : null}
         {(() => {
           const dec = state.decomptes.find((d) => d.bien === p.bien);
           return dec ? (
@@ -441,54 +413,52 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const tl = full.slice(-24);
   const tlMax = Math.max(1, ...tl.flatMap((m) => [m.spend, m.income]));
   const selMonths = new Set(rec.months);
-  const [anchor, setAnchor] = useState('');
-  // Sans clavier (téléphone, tablette, webapp), « Plage » remplace la touche Maj: un premier toucher fixe le début, le second la fin.
-  const [rangeMode, setRangeMode] = useState(false);
-  const pickMonth = (e: MouseEvent, m: string) => {
-    if (rangeMode) {
-      if (!anchor) {
-        setAnchor(m);
-        setPeriod(m);
-      } else {
-        const [a, z] = anchor <= m ? [anchor, m] : [m, anchor];
-        setPeriod(a === z ? a : `${a}..${z}`);
-        setAnchor('');
-        setRangeMode(false);
-      }
-    } else if (e.shiftKey && anchor && anchor !== m) {
-      const [a, z] = anchor < m ? [anchor, m] : [m, anchor];
-      setPeriod(`${a}..${z}`);
-    } else if (period === m) {
-      setPeriod('12');
-      setAnchor('');
-    } else {
-      setPeriod(m);
-      setAnchor(m);
-    }
-    setOpen('');
-    setMore(false);
+  // Choix de la période: un toucher = un mois, un glissé sur les barres = une plage; les raccourcis couvrent le reste.
+  const [drag, setDrag] = useState<[number, number] | null>(null);
+  const barIdx = (e: RPointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return Math.max(0, Math.min(tl.length - 1, Math.floor(((e.clientX - r.left) / Math.max(r.width, 1)) * tl.length)));
   };
+  const setSpan = (p: string) => { setPeriod(p); setOpen(''); setMore(false); };
+  const endDrag = () => {
+    if (!drag) return;
+    const [a, z] = drag[0] <= drag[1] ? drag : [drag[1], drag[0]];
+    setDrag(null);
+    if (a === z) setSpan(period === tl[a].month ? '12' : tl[a].month);
+    else setSpan(`${tl[a].month}..${tl[z].month}`);
+  };
+  const shownMonths = drag ? new Set(tl.slice(Math.min(...drag), Math.max(...drag) + 1).map((m) => m.month)) : selMonths;
+  const presets: [string, string][] = [['12', '12 mois'], ...years.slice(0, 2).map((y): [string, string] => [y, y === curYear && last && last.month.slice(5) !== '12' ? `${y} à ce jour` : y])];
   const timeline = (
     <div className="timeline">
-      <div className="tlbars" role="group" aria-label="Choisir une période">
+      <div
+        className="tlbars"
+        role="group"
+        aria-label="Choisir une période"
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); const i = barIdx(e); setDrag([i, i]); }}
+        onPointerMove={(e) => { if (drag) setDrag([drag[0], barIdx(e)]); }}
+        onPointerUp={endDrag}
+        onPointerCancel={() => setDrag(null)}
+      >
         {tl.map((m) => (
-          <button key={m.month} className={selMonths.has(m.month) ? 'on' : ''} onClick={(e) => pickMonth(e, m.month)} title={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-label={monthName(m.month)} aria-pressed={selMonths.has(m.month)}>
-            <i className="gain" style={{ height: `${Math.max(4, (m.income / tlMax) * 100)}%` }} /><i className="dep" style={{ height: `${Math.max(4, (m.spend / tlMax) * 100)}%` }} />
+          <button key={m.month} className={shownMonths.has(m.month) ? 'on' : ''} onClick={(e) => { if (e.detail === 0) setSpan(period === m.month ? '12' : m.month); }} title={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-label={monthName(m.month)} aria-pressed={shownMonths.has(m.month)}>
+            <i className="dep" style={{ height: `${Math.max(3, (m.spend / tlMax) * 100)}%` }} />
+            <i className="tick" style={{ bottom: `${Math.min(98, (m.income / tlMax) * 100)}%` }} />
           </button>
         ))}
       </div>
-      <div className="tlyears">
-        {tl.map((m, i) => (
-          <span key={m.month}>{m.month.slice(5) === '01' || (i === 0 && (tl.findIndex((x) => x.month.slice(5) === '01') < 0 || tl.findIndex((x) => x.month.slice(5) === '01') >= 4)) ? <button onClick={() => { setPeriod(m.month.slice(0, 4)); setAnchor(''); setRangeMode(false); setOpen(''); setMore(false); }}>{m.month.slice(0, 4)}</button> : null}</span>
-        ))}
+      <div className="tlmonths" aria-hidden="true">
+        {tl.map((m) => <span key={m.month}>{m.month.slice(5) === '01' ? m.month.slice(2, 4) : monthShort(m.month).slice(0, 1).toUpperCase()}</span>)}
       </div>
       <div className="tllabel">
-        <button className={period === '12' ? 'on' : ''} onClick={() => { setPeriod('12'); setAnchor(''); setRangeMode(false); setOpen(''); setMore(false); }}>12 mois</button>
-        <button className={'rng' + (rangeMode ? ' on' : '')} aria-pressed={rangeMode} onClick={() => { setRangeMode(!rangeMode); setAnchor(''); }} title="Choisir un début puis une fin">{rangeMode ? (anchor ? 'Choisis la fin' : 'Choisis le début') : 'Plage'}</button>
+        {presets.map(([p, label]) => <button key={p} className={period === p ? 'on' : ''} onClick={() => setSpan(p)}>{label}</button>)}
+        <div className="unit" role="group" aria-label="Affichage par mois ou par année">
+          <button className={unit === 'mois' ? 'on' : ''} onClick={() => setUnit('mois')} title="Par mois" aria-label="Par mois" aria-pressed={unit === 'mois'}><Calendar size={15} strokeWidth={1.6} /></button>
+          <button className={unit === 'an' ? 'on' : ''} onClick={() => setUnit('an')} title="Par année" aria-label="Par année" aria-pressed={unit === 'an'}><CalendarRange size={15} strokeWidth={1.6} /></button>
+        </div>
         <span>{periodLabel}</span>
       </div>
-      <p className="tlcap"><span><b style={{ background: 'var(--pos)' }} />Gains</span><span><b style={{ background: 'var(--c-cash)' }} />Dépenses</span></p>
-      <p className="tlcmp">{rec.comparedMonths > 0 ? `Les ↑ ↓ comparent à la même période: ${priorLabel}.` : 'Pas de comparaison: les relevés ne remontent pas assez loin.'}</p>
+      <p className="tlcap"><span><b className="bar" />Dépenses</span><span><b className="line" />Gains</span><span className="hint">Glisse sur les barres pour choisir une période</span></p>
     </div>
   );
   const Cmp = ({ now, before, goodUp = false }: { now: number | null; before: number | null; goodUp?: boolean }) => {
@@ -503,14 +473,16 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const [sortBy, setSortBy] = useState<'montant' | 'nom'>('montant');
   const [groupBy, setGroupBy] = useState<Record<string, boolean>>({ exceptionnel: true });
   const [openGroup, setOpenGroup] = useState('');
-  const note = (it: Item) => (it.trend !== null && it.trend !== undefined && it.delta !== null && it.delta !== undefined && it.prior !== null && it.prior !== undefined && Math.abs(it.trend) >= 0.1 && Math.abs(it.delta) >= 100 ? { text: `${it.trend > 0 ? '↑' : '↓'} ${pct(it.trend)} · ${money(it.prior)} en ${priorLabel}`, tone: it.trend > 0 ? 'up' : 'down' } : null);
+  const [moreG, setMoreG] = useState('');
+  // Un écart ne s'affiche que s'il pèse: en francs, pas en pourcentage, et à partir de 300 CHF.
+  const note = (it: Item) => (it.delta !== null && it.delta !== undefined && it.prior !== null && it.prior !== undefined && Math.abs(it.delta) >= 300 ? { text: `${it.delta > 0 ? '+' : '−'}${money(Math.abs(it.delta))} sur un an (${money(it.prior)} avant)`, tone: '' } : null);
   const renderRow = (it: Item) => {
     const n = note(it);
     return (
       <li key={it.id} className={open === it.id ? 'open' : ''}>
         <button className="rowbtn" onClick={() => setOpen(open === it.id ? '' : it.id)} aria-expanded={open === it.id}>
           <span className="n">{it.name}{n ? <small className={'chg ' + n.tone}>{n.text}</small> : null}</span>
-          <span className="v">{money(it.amount)}</span>
+          <span className="v">{money(sc(it.amount))}</span>
         </button>
         {open === it.id ? (
           <div className="detail">
@@ -579,6 +551,44 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       </>
     );
   };
+  const renderTree = (tabKey: string, items: Item[], groupOf: (it: Item) => { id: string; label: string; color: string }) => {
+    const gm = new Map<string, { id: string; label: string; color: string; list: Item[]; amount: number }>();
+    for (const it of items) {
+      const g = groupOf(it);
+      const e = gm.get(g.id) ?? { ...g, list: [], amount: 0 };
+      e.list.push(it);
+      e.amount += it.amount;
+      gm.set(g.id, e);
+    }
+    const groups = [...gm.values()].sort((a, b) => b.amount - a.amount);
+    const tot = Math.max(1, groups.reduce((t, g) => t + g.amount, 0));
+    const top = Math.max(1, groups[0]?.amount ?? 1);
+    return (
+      <ul className="rows tree">
+        {groups.map((g) => {
+          const key = tabKey + g.id;
+          const isOpen = openGroup === key;
+          const list = [...g.list].sort((a, b) => b.amount - a.amount);
+          const shown = moreG === key ? list : list.slice(0, 8);
+          return (
+            <li key={g.id} className={isOpen ? 'open' : ''}>
+              <button className="rowbtn" onClick={() => { setOpenGroup(isOpen ? '' : key); setOpen(''); }} aria-expanded={isOpen}>
+                <span className="n"><span><span className="dot" style={{ background: g.color }} />{g.label}</span><small>{Math.round((g.amount / tot) * 100)} % · {plural(g.list.length, 'poste')}</small></span>
+                <span className="v">{money(sc(g.amount))}</span>
+              </button>
+              <span className="gbar" aria-hidden="true"><i style={{ width: `${(g.amount / top) * 100}%`, background: g.color }} /></span>
+              {isOpen ? (
+                <ul className="rows sub">
+                  {shown.map((it) => renderRow(it))}
+                  {list.length > 8 && moreG !== key ? <li className="plain"><button className="morelink" onClick={() => setMoreG(key)}>Voir les {list.length - 8} autres</button></li> : null}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
   const maxCat = Math.max(1, ...cats.map((c) => (catView === 'total' ? c.total : c.avg)));
 
   const hbars = (rows: { k: string; label: string; v: number; note?: string; color?: string }[], max: number) => (
@@ -597,7 +607,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
   const revTotal = revCats.reduce((t, x) => t + x.v, 0);
   const revStruct = revCats.filter((x) => STRUCT.includes(x.k)).reduce((t, x) => t + x.v, 0);
   const revMoves = rec.recurring.filter((x) => x.delta !== null && Math.abs(x.delta) >= 200).sort((p, q) => Math.abs(q.delta ?? 0) - Math.abs(p.delta ?? 0)).slice(0, 5);
-  const DAILY: [string, string[], string][] = [['Courses', ['alimentation'], 'var(--c-securities)'], ['Restaurants', ['restaurants'], 'var(--c-real_estate)'], ['Achats et loisirs', ['quotidien', 'maison', 'vetements', 'loisirs'], 'var(--c-pension)']];
+  const DAILY: [string, string[], string][] = [['Courses', ['alimentation'], 'var(--k8)'], ['Restaurants', ['restaurants'], 'var(--k4)'], ['Achats et loisirs', ['quotidien', 'maison', 'vetements', 'loisirs'], 'var(--k10)']];
   const dailyMonths = full.slice(-13).map((m) => ({ month: m.month, parts: DAILY.map(([, ks]) => ks.reduce((t, k) => t + (m.byCategory[k] ?? 0), 0)) }));
   const dailyMax = Math.max(1, ...dailyMonths.map((m) => m.parts.reduce((t, v) => t + v, 0)));
   const dailyAvg = dailyMonths.length ? dailyMonths.reduce((t, m) => t + m.parts.reduce((a, v) => a + v, 0), 0) / dailyMonths.length : 0;
@@ -617,215 +627,252 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         <>
           {timeline}
           <div className="tabs" role="tablist" aria-label="Rubriques">
-            {([['synthese', 'Synthèse', <LayoutGrid key="s" size={20} strokeWidth={1.5} />], ['revient', 'Revient', <Repeat key="a" size={20} strokeWidth={1.5} />], ['quotidien', 'Quotidien', <ShoppingBasket key="b" size={20} strokeWidth={1.5} />], ['exceptionnel', 'Ponctuel', <Zap key="c" size={20} strokeWidth={1.5} />], ['immo', 'Immobilier', <Building2 key="e" size={20} strokeWidth={1.5} />], ['compare', 'Comparatif', <Repeat key="p" size={20} strokeWidth={1.5} />], ['mila', 'Mila', <Home key="m" size={20} strokeWidth={1.5} />]] as [typeof tab, string, ReactElement][]).map(([k, l, ic]) => (
+            {([['synthese', 'Synthèse', <LayoutGrid key="s" size={20} strokeWidth={1.5} />], ['revient', 'Charges', <Repeat key="a" size={20} strokeWidth={1.5} />], ['quotidien', 'Quotidien', <ShoppingBasket key="b" size={20} strokeWidth={1.5} />], ['immo', 'Immobilier', <Building2 key="e" size={20} strokeWidth={1.5} />], ['compare', 'Comparatif', <ArrowLeftRight key="p" size={20} strokeWidth={1.5} />], ['mila', 'Mila', <Home key="m" size={20} strokeWidth={1.5} />]] as [typeof tab, string, ReactElement][]).filter(([k]) => k !== 'mila' || !!state.mila).map(([k, l, ic]) => (
               <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setTab(k); setMore(false); setOpen(''); }}>{ic}<span>{l}</span></button>
             ))}
           </div>
 
-          {tab === 'revient' && revTotal > 0 ? (
-            <section>
-              <h3 className="subtitle first">Où part ce qui revient</h3>
-              <div className="stackbar" aria-hidden="true"><i style={{ width: `${(revStruct / revTotal) * 100}%`, background: 'var(--c-cash)' }} /><i style={{ width: `${((revTotal - revStruct) / revTotal) * 100}%`, background: 'var(--c-real_estate)' }} /></div>
-              <p className="muted small">Structurel (impôts, logement, assurances, énergie, enfants): {money(revStruct)}, {Math.round((revStruct / revTotal) * 100)} %. Ajustable: {money(revTotal - revStruct)}, {Math.round(((revTotal - revStruct) / revTotal) * 100)} %.</p>
-              {hbars(revCats.slice(0, 8).map((x) => ({ k: x.k, label: LABEL[x.k] ?? x.k, v: x.v, note: `${Math.round((x.v / revTotal) * 100)} %`, color: STRUCT.includes(x.k) ? 'var(--c-cash)' : 'var(--c-real_estate)' })), revCats[0]?.v ?? 1)}
-              {revMoves.length > 0 ? (
-                <>
-                  <h3 className="subtitle">Ce qui a le plus bougé</h3>
-                  <ul className="rows">
-                    {revMoves.map((x) => (
-                      <li key={x.key} className="plain"><span className="n">{x.label}<small>{LABEL[x.category] ?? x.category}</small></span><span className="v">{money(x.perYear)} <small>{(x.delta ?? 0) > 0 ? '+' : '−'}{money(Math.abs(x.delta ?? 0))} sur un an</small></span></li>
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-              <h3 className="subtitle">Détail</h3>
-            </section>
-          ) : null}
-          {tab === 'revient' ? renderList('revient', rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, bases: x.bases, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, x.cadence, `environ ${money(x.perMonth)} par mois`, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines }))) : null}
-          {tab === 'quotidien' && dailyMonths.length > 0 ? (
-            <section>
-              <h3 className="subtitle first">Le quotidien mois par mois</h3>
-              <p className="muted small">En moyenne {money(dailyAvg)} par mois.</p>
-              <div className="cols" role="img" aria-label="Dépenses du quotidien par mois">
-                {dailyMonths.map((m) => {
-                  const tot = m.parts.reduce((t, v) => t + v, 0);
-                  return (
-                    <div key={m.month} className="col" title={`${m.month}: ${money(tot)}`}>
-                      <span className="stk" style={{ height: `${(tot / dailyMax) * 100}%` }}>
-                        {m.parts.map((v, i) => <i key={i} style={{ flex: v, background: DAILY[i][2] }} />)}
-                      </span>
-                      <small>{monthShort(m.month)}</small>
-                    </div>
-                  );
+          {tab === 'revient' ? (() => {
+            const items: Item[] = [
+              ...rec.recurring.map((x) => ({ id: x.key, name: x.label, amount: x.perYear, cat: x.category, bases: x.bases, prior: x.prior, trend: x.trend, delta: x.delta, facts: [x.cadence, x.bien ?? '', x.lever ? 'à comparer' : '', plural(x.count, 'paiement')], lines: x.lines })),
+              ...rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, bases: x.bases, facts: [dateFr(x.date), 'une fois sur la période'], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] })),
+            ];
+            const total = items.reduce((t, x) => t + x.amount, 0);
+            if (total <= 0) return <section><p className="muted small">Rien à afficher sur cette période.</p></section>;
+            const struct = items.filter((x) => STRUCT.includes(x.cat)).reduce((t, x) => t + x.amount, 0);
+            return (
+              <section>
+                <div className="inds big">
+                  <span className="ind"><Repeat size={18} strokeWidth={1.6} /><b>{money(sc(total))}</b><small>de charges {unit === 'mois' ? 'par mois' : 'par an'}</small></span>
+                  <span className="ind"><Landmark size={18} strokeWidth={1.6} /><b>{Math.round((struct / total) * 100)} %</b><small>incompressible</small></span>
+                </div>
+                <div className="stackbar" aria-hidden="true"><i style={{ width: `${(struct / total) * 100}%`, background: 'var(--k1)' }} /><i style={{ width: `${((total - struct) / total) * 100}%`, background: 'var(--k4)' }} /></div>
+                <p className="muted small">Incompressible: impôts, logement, assurances, énergie, enfants, famille. Le reste est ajustable. Les impôts, voyages et grosses dépenses de l’année sont inclus. Touche un poste pour voir son détail.</p>
+                {renderTree('revient', items, (it) => ({ id: it.cat, label: LABEL[it.cat] ?? it.cat, color: colorOf(it.cat) }))}
+              </section>
+            );
+          })() : null}
+
+          {tab === 'quotidien' ? (() => {
+            const items: Item[] = rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, bases: x.bases, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, plural(x.count, 'paiement')], lines: x.lines }));
+            const listed = items.reduce((t, x) => t + x.amount, 0);
+            const small = Math.max(0, rec.totals.daily - listed);
+            if (rec.totals.daily <= 0) return <section><p className="muted small">Rien à afficher sur cette période.</p></section>;
+            return (
+              <section>
+                <div className="inds big">
+                  <span className="ind"><ShoppingBasket size={18} strokeWidth={1.6} /><b>{money(sc(rec.totals.daily))}</b><small>de quotidien {unit === 'mois' ? 'par mois' : 'par an'}</small></span>
+                  <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{rec.totals.daily + rec.totals.recurring + rec.totals.exceptional > 0 ? Math.round((rec.totals.daily / spendYear) * 100) : 0} %</b><small>des dépenses</small></span>
+                </div>
+                <p className="muted small">Courses, restaurants, achats du quotidien. Touche une famille, puis un commerçant, pour voir les paiements.</p>
+                {renderTree('quotidien', items, (it) => {
+                  const f = DAILY.find(([, ks]) => ks.includes(it.cat));
+                  return f ? { id: f[0], label: f[0], color: f[2] } : { id: 'autres', label: 'Autres achats', color: 'var(--k9)' };
                 })}
-              </div>
-              <p className="legend">{DAILY.map(([n, , c]) => <span key={n}><i style={{ background: c }} />{n}</span>)}</p>
-              <h3 className="subtitle">Où vont ces achats</h3>
-              {hbars(rec.merchants.slice(0, 8).map((x) => ({ k: x.key, label: x.label, v: x.total, note: `${plural(x.count, 'achat')}`, color: 'var(--c-securities)' })), rec.merchants[0]?.total ?? 1)}
-              <h3 className="subtitle">Détail</h3>
-            </section>
-          ) : null}
-          {tab === 'quotidien' ? renderList('quotidien', rec.merchants.map((x) => ({ id: x.key, name: x.label, amount: x.total, cat: x.category, bases: x.bases, prior: x.prior, trend: x.trend, delta: x.delta, facts: [LABEL[x.category] ?? x.category, `environ ${money(x.total / monthsN)} par mois`, plural(x.count, 'paiement')], lines: x.lines }))) : null}
-          {tab === 'exceptionnel' ? <p className="muted small">Dépenses normales qui ne reviennent pas chaque mois: impôts, voyages, santé, formation, véhicule, achats importants. Rien d’exceptionnel là-dedans, c’est le coût d’une année.</p> : null}
-          {tab === 'exceptionnel' ? renderList('exceptionnel', rec.oneOffs.map((x, i) => ({ id: `o${i}`, name: /^(paiement|d[ée]bit|ordre|transfert|virement|retrait)/i.test(x.label) ? (LABEL[x.category] ?? x.label) : x.label, amount: x.amount, cat: x.category, bases: x.bases, facts: [dateFr(x.date), LABEL[x.category] ?? x.category], lines: [{ date: x.date, amount: x.amount, account: '', text: x.text }] }))) : null}
+                {small >= 50 ? <p className="muted small">Non listé: {money(sc(small))} {unit === 'mois' ? 'par mois' : 'par an'} de petits achats (moins de 100 CHF par commerçant sur la période).</p> : null}
+              </section>
+            );
+          })() : null}
 
-          {tab === 'synthese' ? (
-            <section>
-              <div className="duo">
-                <div className="side">
-                  <p className="lbl">Gains</p>
-                  <p className="amt">{money(rec.income)}</p>
-                  <Cmp now={rec.compare.incomeNow} before={rec.compare.income} goodUp />
-                  <ul className="split">
-                    {rec.incomeBy.map((x) => (
-                      <li key={x.label}><span>{x.label}</span><b>{money(x.amount)}</b><i style={{ width: `${rec.income > 0 ? Math.min(100, (x.amount / rec.income) * 100) : 0}%`, background: 'var(--pos)' }} /></li>
-                    ))}
-                  </ul>
-                  {rec.incomeOnce > 0 ? <p className="muted small">Hors habituel, non compté: {money(rec.incomeOnce)}</p> : null}
+          {tab === 'synthese' ? (() => {
+            const income = Math.max(rec.income, 0);
+            const T = Math.max(income, spendYear, 1);
+            const H = 150, SLOT = 40, GAP = 6, XL = 14, XR = 150, XM = (XL + XR) / 2;
+            const nodes: { k: string; label: string; v: number; color: string; go: boolean }[] = [
+              ...parts.filter((x) => x.v > 0).map((x) => ({ k: x.k as string, label: x.label, v: x.v, color: x.color, go: true })),
+              ...(income > spendYear ? [{ k: 'reste', label: 'Reste', v: income - spendYear, color: 'var(--pos)', go: false }] : []),
+            ];
+            const hs = nodes.map((n) => Math.max(4, (n.v / T) * H));
+            const slots = hs.map((h) => Math.max(h, SLOT));
+            const totalH = slots.reduce((t, s) => t + s + GAP, 0) - GAP;
+            const lh = hs.reduce((t, h) => t + h, 0);
+            const l0 = Math.max(0, (totalH - lh) / 2);
+            let slotTop = 0;
+            let ly = l0;
+            const flows = nodes.map((n, i) => {
+              const h = hs[i];
+              const ry = slotTop + (slots[i] - h) / 2;
+              const out = { n, h, ry, ly, cy: slotTop + slots[i] / 2 };
+              slotTop += slots[i] + GAP;
+              ly += h;
+              return out;
+            });
+            const deficit = Math.max(0, spendYear - income);
+            const defH = deficit > 0 ? (lh * deficit) / T : 0;
+            const manque = resteM < 0;
+            return (
+              <section>
+                <div className="inds big">
+                  <span className="ind"><TrendingUp size={18} strokeWidth={1.6} /><b>{money(sc(rec.income))}</b><small>gagné</small></span>
+                  <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(sc(spendYear))}</b><small>dépensé</small></span>
+                  <span className={'ind ' + (manque ? 'bad' : 'ok')}><Landmark size={18} strokeWidth={1.6} /><b>{money(sc(rec.income - spendYear))}</b><small>{manque ? 'de manque' : 'qui reste'}</small></span>
                 </div>
-                <div className="side">
-                  <p className="lbl">Dépenses</p>
-                  <p className="amt">{money(spendYear)}</p>
-                  <Cmp now={rec.compare.spendNow} before={rec.compare.spend} />
-                  <ul className="split">
-                    {parts.map((x) => (
-                      <li key={x.k}><button onClick={() => { setTab(x.k); setMore(false); setOpen(''); }}><span>{x.label}</span><b>{money(x.v)}</b></button><i style={{ width: `${spendYear > 0 ? Math.min(100, (x.v / spendYear) * 100) : 0}%`, background: x.color }} /></li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              {rec.avoidable.filter((x) => x.kind !== 'habitude').length > 0 ? (
-                <>
-                  <h3 className="subtitle">À questionner</h3>
-                  <ul className="rows">
-                    {rec.avoidable.filter((x) => x.kind !== 'habitude').slice(0, 6).map((x) => (
-                      <li key={x.key + x.kind} className="plain">
-                        <span className="n">{x.label}<small>{x.kind === 'abonnement' ? `Abonnement, ${plural(x.count, 'paiement')}` : x.kind === 'frais' ? `Frais, ${plural(x.count, 'paiement')}` : `${plural(x.count, 'achat')} au même endroit, environ ${money(x.perMonth)} par mois`}</small></span>
-                        <span className="v">{money(x.perYear)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-              {levers.length + mortgageLevers.length > 0 ? (
-                <>
-                  <h3 className="subtitle">À comparer ou renégocier</h3>
-                  <ul className="rows">
-                    {mortgageLevers.slice(0, 3).map((x) => (
-                      <li key={x.key} className="plain"><span className="n">{x.label}<small>Taux {pctPlain(x.rate)}: à comparer au SARON au renouvellement</small></span><span className="v">{money(x.interest)}<small>d’intérêts par an</small></span></li>
-                    ))}
-                    {levers.slice(0, 4).map((x) => (
-                      <li key={x.key} className="plain"><span className="n">{x.label}<small>{x.cadence}</small></span><span className="v">{money(x.perYear)}</span></li>
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-            </section>
-          ) : null}
+                <p className="muted small">{unit === 'mois' ? 'Par mois' : 'Par an'}, au rythme de {periodLabel}.</p>
+                <svg className="flow" viewBox={`0 0 360 ${totalH}`} role="img" aria-label={`Ce qui est gagné se répartit entre ${nodes.map((n) => n.label).join(', ')}`}>
+                  {flows.map(({ n, h, ry, ly: y0 }) => (
+                    <path key={'p' + n.k} d={`M${XL},${y0} C${XM},${y0} ${XM},${ry} ${XR},${ry} L${XR},${ry + h} C${XM},${ry + h} ${XM},${y0 + h} ${XL},${y0 + h} Z`} style={{ fill: n.color, opacity: 0.28 }} />
+                  ))}
+                  <rect x={0} y={l0} width={XL} height={Math.max(1, lh - defH)} rx={3} style={{ fill: 'var(--pos)' }} />
+                  {defH > 0 ? <rect x={0} y={l0 + lh - defH} width={XL} height={defH} rx={3} style={{ fill: 'var(--neg)' }} /> : null}
+                  {flows.map(({ n, h, ry, cy }) => (
+                    <g key={'n' + n.k} onClick={() => { if (n.go) { setTab(n.k as typeof tab); setMore(false); setOpen(''); } }} style={{ cursor: n.go ? 'pointer' : 'default' }}>
+                      <rect x={XR} y={ry} width={12} height={h} rx={3} style={{ fill: n.color }} />
+                      <text x={XR + 22} y={cy - 3}>{n.label}</text>
+                      <text x={XR + 22} y={cy + 14} className="sub">{money(sc(n.v))} · {Math.round((n.v / T) * 100)} %</text>
+                    </g>
+                  ))}
+                </svg>
+                <p className="muted small">{manque ? 'Le rouge à gauche est ce qui a été dépensé en plus de ce qui est entré.' : 'Chaque bande part de ce qui est entré et va là où l’argent est sorti.'} Touche une destination pour ouvrir le détail.</p>
+                {rec.compare.spend !== null && rec.compare.spendNow !== null ? (
+                  <>
+                    <h3 className="subtitle">Par rapport à l’an dernier</h3>
+                    <Cmp now={rec.compare.spendNow} before={rec.compare.spend} />
+                  </>
+                ) : null}
+                {levers.length + mortgageLevers.length > 0 ? (
+                  <>
+                    <h3 className="subtitle">À comparer ou renégocier</h3>
+                    <ul className="rows">
+                      {mortgageLevers.slice(0, 2).map((x) => (
+                        <li key={x.key} className="plain"><span className="n">{x.label}<small>Taux {pctPlain(x.rate)}: à comparer au SARON au renouvellement</small></span><span className="v">{money(x.interest)}<small>d’intérêts par an</small></span></li>
+                      ))}
+                      {levers.slice(0, 3).map((x) => (
+                        <li key={x.key} className="plain"><span className="n">{x.label}<small>{x.cadence}</small></span><span className="v">{money(sc(x.perYear))}</span></li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </section>
+            );
+          })() : null}
 
-          {tab === 'compare' && cmpData ? (() => {
-            const all = cmpData.rows.flatMap((g, gi) => g.items.map((x) => ({ ...x, struct: gi === 0 })));
-            const top = [...all].sort((p, q) => q.b - p.b).slice(0, 10);
-            const rest = all.filter((x) => !top.includes(x));
-            const restA = rest.reduce((t, x) => t + x.a, 0);
-            const restB = rest.reduce((t, x) => t + x.b, 0);
-            const lines = [...top.map((x) => ({ k: x.k, label: LABEL[x.k] ?? x.k, a: x.a, b: x.b, struct: x.struct })), ...(rest.length ? [{ k: 'autres', label: 'Autres', a: restA, b: restB, struct: false }] : [])];
-            const mx = Math.max(1, ...lines.flatMap((x) => [x.a, x.b]));
-            const [yA, yB] = cmpData.years;
+          {tab === 'compare' ? (() => {
+            if (prevYear.length === 0) return <section><p className="muted small">Pas de comparaison possible: les relevés ne remontent pas assez loin pour cette période.</p></section>;
+            const S = (ms: typeof used, f: (m: (typeof used)[number]) => number) => ms.reduce((t, m) => t + f(m), 0);
+            const keys = [...new Set([...used, ...prevYear].flatMap((m) => Object.keys(m.byCategory)))];
+            const all = keys.map((k) => ({ k, a: S(prevYear, (m) => m.byCategory[k] ?? 0), b: S(used, (m) => m.byCategory[k] ?? 0) }));
+            const labA = rangeLabelFn(prevYear.map((m) => m.month));
+            const labB = rangeLabelFn(used.map((m) => m.month));
+            const incA = S(prevYear, (m) => m.income), incB = S(used, (m) => m.income);
+            const spA = S(prevYear, (m) => m.spend), spB = S(used, (m) => m.spend);
             const diff = (n: number) => (Math.abs(n) < 100 ? '—' : `${n > 0 ? '+' : '−'}${money(Math.abs(n))}`);
+            const movers = all.map((x) => ({ ...x, d: x.b - x.a })).filter((x) => Math.abs(x.d) >= 200).sort((p, q) => Math.abs(q.d) - Math.abs(p.d)).slice(0, 8);
+            const rest = spB - spA - movers.reduce((t, x) => t + x.d, 0);
             return (
               <section className="immo">
-                <h3 className="subtitle first">{cmpData.label}</h3>
+                <p className="cmphead">{labB} <span className="muted">contre</span> {labA}</p>
+                <p className="muted small">Les mêmes mois, un an plus tôt. Totaux sur toute la période, pas par mois.</p>
                 <table className="cmp">
-                  <thead><tr><th /><th>{yA}</th><th>{yB}</th><th>Écart</th></tr></thead>
+                  <thead><tr><th /><th>Avant<small>{labA}</small></th><th>Maintenant<small>{labB}</small></th><th>Écart</th></tr></thead>
                   <tbody>
-                    <tr><td>Revenus réguliers</td><td>{money(cmpData.income[0])}</td><td>{money(cmpData.income[1])}</td><td>{diff(cmpData.income[1] - cmpData.income[0])}</td></tr>
-                    <tr><td>Dépenses</td><td>{money(cmpData.spend[0])}</td><td>{money(cmpData.spend[1])}</td><td className={cmpData.spend[1] > cmpData.spend[0] ? 'neg' : 'pos'}>{diff(cmpData.spend[1] - cmpData.spend[0])}</td></tr>
-                    <tr className="tot"><td>Reste</td><td>{money(cmpData.income[0] - cmpData.spend[0])}</td><td>{money(cmpData.income[1] - cmpData.spend[1])}</td><td>{diff(cmpData.income[1] - cmpData.spend[1] - (cmpData.income[0] - cmpData.spend[0]))}</td></tr>
+                    <tr><td>Gagné</td><td>{money(incA)}</td><td>{money(incB)}</td><td>{diff(incB - incA)}</td></tr>
+                    <tr><td>Dépensé</td><td>{money(spA)}</td><td>{money(spB)}</td><td>{diff(spB - spA)}</td></tr>
+                    <tr className="tot"><td>Reste</td><td>{money(incA - spA)}</td><td>{money(incB - spB)}</td><td>{diff(incB - spB - (incA - spA))}</td></tr>
                   </tbody>
                 </table>
-                <h3 className="subtitle">Dépenses par catégorie</h3>
-                <ul className="pair">
-                  {lines.map((x) => {
-                    const d = x.b - x.a;
-                    return (
-                      <li key={x.k}>
-                        <span className="pl">{x.label}{x.struct ? <small>structurel</small> : null}</span>
-                        <span className="pb"><i className="a" style={{ width: `${(x.a / mx) * 100}%` }} /><i className="b" style={{ width: `${(x.b / mx) * 100}%` }} /></span>
-                        <span className="pv">{money(x.b)}<small className={d > 100 ? 'neg' : d < -100 ? 'pos' : ''}>{diff(d)}</small></span>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p className="legend"><span><i className="lg a" />{yA}</span><span><i className="lg b" />{yB}</span></p>
-                <p className="muted small">Mêmes mois comparés d’une année à l’autre, doublons et virements entre comptes écartés. Hors versements uniques ({money(cmpData.exceptional[1])} contre {money(cmpData.exceptional[0])}) et argent mis de côté ({money(cmpData.saved[1])} contre {money(cmpData.saved[0])}).</p>
+                {movers.length > 0 ? (
+                  <>
+                    <h3 className="subtitle">Où se joue l’écart de dépenses</h3>
+                    <ul className="rows">
+                      {movers.map((x) => <li key={x.k} className="plain"><span className="n">{LABEL[x.k] ?? x.k}<small>{money(x.a)} → {money(x.b)}</small></span><span className={'v delta ' + (x.d > 0 ? 'up' : 'down')}>{diff(x.d)}</span></li>)}
+                      {Math.abs(rest) >= 200 ? <li className="plain"><span className="n">Autres écarts<small>plusieurs petits postes</small></span><span className="v delta">{diff(rest)}</span></li> : null}
+                    </ul>
+                  </>
+                ) : null}
+                <p className="muted small">Doublons et virements entre comptes écartés. Pour changer la période comparée, choisis-la dans la frise en haut.</p>
               </section>
             );
           })() : null}
 
           {tab === 'mila' && state.mila ? (() => {
             const mv = state.mila;
-            const MAP: Record<string, string> = { loyer: 'Logement', ecole: 'École', nourriture: 'Repas et courses', alimentation: 'Repas et courses', restaurants: 'Repas et courses', sante: 'Santé' };
-            const acc: Record<string, { label: string; total: number; perMonth: number }> = {};
-            const put = (key: string, x: { total: number; perMonth: number }) => {
-              const label = MAP[key] ?? 'Autres';
-              acc[label] = { label, total: (acc[label]?.total ?? 0) + x.total, perMonth: (acc[label]?.perMonth ?? 0) + x.perMonth };
+            const FACTOR = milaSpan === 'annee' ? 10.5 : 1;
+            const MAP: Record<string, [string, string]> = { loyer: ['Logement', 'logement'], ecole: ['École', 'enfants'], nourriture: ['Repas et courses', 'alimentation'], alimentation: ['Repas et courses', 'alimentation'], restaurants: ['Repas et courses', 'alimentation'], sante: ['Santé', 'sante'] };
+            const acc: Record<string, { label: string; cat: string; total: number; perMonth: number; count: number }> = {};
+            const put = (key: string, x: { total: number; perMonth: number; count: number }) => {
+              const [label, cat] = MAP[key] ?? ['Autres', 'autre'];
+              acc[label] = { label, cat, total: (acc[label]?.total ?? 0) + x.total, perMonth: (acc[label]?.perMonth ?? 0) + x.perMonth, count: (acc[label]?.count ?? 0) + x.count };
             };
             mv.famille.couts.forEach((x) => put(x.key, x));
             mv.compte?.sorties.forEach((x) => put(x.key, x));
-            const rows = Object.values(acc).sort((p, q) => q.total - p.total);
-            const maxRow = Math.max(1, ...rows.map((x) => x.perMonth));
+            const rows = Object.values(acc).sort((p, q) => q.perMonth - p.perMonth);
+            const perMonth = rows.reduce((t, x) => t + x.perMonth, 0);
+            const total = perMonth * FACTOR;
+            const yearTotal = perMonth * 10.5;
+            const left = Math.max(0, yearTotal - mv.cout.total);
+            const mx = Math.max(1, ...rows.map((x) => x.perMonth * FACTOR));
             return (
               <section className="immo">
-                <h3 className="subtitle first">Ce que Mila nous coûte</h3>
-                <div className="inds big">
-                  <span className="ind"><Home size={18} strokeWidth={1.6} /><b>{money(mv.cout.perMonth)}</b><small>par mois, depuis septembre</small></span>
-                  <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(mv.cout.total)}</b><small>depuis le 17 août</small></span>
+                <div className="seg" role="group" aria-label="Période">
+                  <button className={milaSpan === 'mois' ? 'on' : ''} onClick={() => setMilaSpan('mois')}>Par mois</button>
+                  <button className={milaSpan === 'annee' ? 'on' : ''} onClick={() => setMilaSpan('annee')}>Année scolaire</button>
                 </div>
-                {hbars(rows.map((x) => ({ k: x.label, label: x.label, v: x.perMonth, note: `${money(x.total)} au total`, color: 'var(--c-cash)' })), maxRow)}
-                <p className="muted small">Montants par mois. Yverdon et Ste-Croix uniquement, plus tout ce qui est clairement pour le CPNV.</p>
+                <div className="inds big">
+                  <span className="ind"><Home size={18} strokeWidth={1.6} /><b>{money(total)}</b><small>{milaSpan === 'mois' ? 'par mois en moyenne' : 'prévus sur l’année scolaire'}</small></span>
+                  <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(mv.cout.total)}</b><small>déjà payé depuis le 17 août</small></span>
+                  <span className="ind"><Landmark size={18} strokeWidth={1.6} /><b>{money(left)}</b><small>encore à prévoir jusqu’à fin juin</small></span>
+                </div>
+                <ul className="hb">
+                  {rows.map((x) => (
+                    <li key={x.label}>
+                      <span className="hl">{x.label}<small>{Math.round((x.perMonth / Math.max(perMonth, 1)) * 100)} % · {plural(x.count, 'paiement')}</small></span>
+                      <span className="hbar"><i style={{ width: `${(x.perMonth * FACTOR / mx) * 100}%`, background: colorOf(x.cat) }} /></span>
+                      <b>{money(x.perMonth * FACTOR)}</b>
+                    </li>
+                  ))}
+                </ul>
+                {mv.compte ? <p className="muted small">Solde de son compte: {money(mv.compte.solde)}, contre {money(mv.compte.soldeInitial)} au départ.</p> : null}
+                <p className="muted small">Yverdon et Ste-Croix uniquement, plus tout ce qui est clairement pour le CPNV. Année scolaire: 10,5 mois, du 17 août au 30 juin.</p>
                 {mv.famille.epargne.length > 0 ? <p className="muted small">Mis de côté pour elle, pas un coût: {money(mv.famille.epargne.reduce((t, x) => t + x.total, 0))} d’argent de poche versé sur son épargne.</p> : null}
-                <p className="muted small">Dépôt de garantie de 900 CHF versé le 14 août, remboursé fin juin 2027: pas un coût.</p>
-                {mv.compte ? (
-                  <details className="prop">
-                    <summary><span className="pn">Son compte Migros<small>solde {money(mv.compte.solde)}</small></span></summary>
-                    <ul className="mini">
-                      <li><span>Versé par la famille</span><b>{money(mv.compte.totalEntrees)}</b></li>
-                      {mv.compte.sorties.map((x) => <li key={x.key}><span>{x.label}</span><b>{money(x.total)}</b></li>)}
-                      <li className="net"><span>Dépensé et compté</span><b>{money(mv.compte.totalSorties)}</b></li>
-                      {mv.compte.hors > 0 ? <li className="muted small"><span>Hors Yverdon et Ste-Croix, non compté</span><b>{money(mv.compte.hors)}</b></li> : null}
-                    </ul>
-                  </details>
-                ) : null}
+                <p className="muted small">Dépôt de garantie de 900 CHF, remboursé fin juin 2027: pas un coût.</p>
               </section>
             );
           })() : null}
 
-          {tab === 'immo' ? (
-            <section className="immo">
-              {homeProps.length > 0 ? (
-                <>
-                  <h3 className="subtitle first">Résidence principale</h3>
-                  {homeProps.map((p) => renderProp(p))}
-                </>
-              ) : null}
-              {invProps.length > 0 ? (
-                <>
-                  <h3 className="subtitle">Investissements</h3>
-                  {invSummary ? (
+          {tab === 'immo' ? (() => {
+            const T = (f: (p: Prop) => number) => invProps.reduce((t, p) => t + f(p), 0);
+            const loyers = T((p) => p.loyers), charges = T((p) => p.charges), amort = T((p) => p.amort);
+            const res = loyers - charges;
+            const withVal = props.filter((p) => p.valeur);
+            const val = withVal.reduce((t, p) => t + (p.valeur ?? 0), 0);
+            const debt = withVal.reduce((t, p) => t + p.dette, 0);
+            const orphan = invProps.filter((p) => p.orphan && p.loyers > 0);
+            return (
+              <section className="immo">
+                {invProps.length > 0 ? (
+                  <>
+                    <h3 className="subtitle first">Investissements</h3>
                     <div className="inds big">
-                      <span className={'ind ' + invSummary.tone.r}><TrendingUp size={18} strokeWidth={1.6} /><b>{invSummary.rend !== null ? pctPlain(invSummary.rend) : '—'}</b><small>rendement net</small></span>
-                      <span className={'ind ' + invSummary.tone.c}><Wallet size={18} strokeWidth={1.6} /><b>{money(invSummary.cash)}</b><small>par mois, après intérêts, hors travaux</small></span>
-                      <span className={'ind ' + invSummary.tone.l}><Landmark size={18} strokeWidth={1.6} /><b>{invSummary.ltv !== null ? pctPlain(invSummary.ltv) : '—'}</b><small>de dette</small></span>
+                      <span className="ind"><TrendingUp size={18} strokeWidth={1.6} /><b>{money(sc(loyers))}</b><small>loyers nets reçus</small></span>
+                      <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(sc(charges))}</b><small>de charges, intérêts et travaux</small></span>
+                      <span className={'ind ' + (res >= 0 ? 'ok' : 'bad')}><Landmark size={18} strokeWidth={1.6} /><b>{money(sc(res))}</b><small>de résultat</small></span>
                     </div>
-                  ) : null}
-                  {invProps.map((p) => renderProp(p))}
-                  <p className="muted small">Rendement net: loyers moins charges courantes (avant intérêts) sur la valeur estimée, donc indicatif tant que cette valeur n’est pas une expertise. Cash-flow: ce qui reste chaque mois après intérêts, sans les travaux ponctuels (comptés à part). Dette: hypothèque sur valeur estimée.</p>
-                </>
-              ) : null}
-              {bienNames.length === 0 ? <p className="muted small">Ajoute tes biens dans Documents, « Mes biens ».</p> : null}
-            </section>
-          ) : null}
+                    <p className="muted small">{unit === 'mois' ? 'Par mois' : 'Par an'}, au rythme de {periodLabel}.{amort > 0 ? ` Après le capital remboursé à la banque (${money(sc(amort))}), il reste ${money(sc(res - amort))}.` : ''}</p>
+                    {orphan.length > 0 ? <p className="muted small">Attention: {money(sc(orphan.reduce((t, p) => t + p.loyers, 0)))} de loyers ne sont rattachés à aucun bien. Ils sont comptés ici mais pas dans un bien précis.</p> : null}
+                    {invProps.map((p) => renderProp(p))}
+                  </>
+                ) : null}
+                {homeProps.length > 0 ? (
+                  <>
+                    <h3 className="subtitle">Résidence principale</h3>
+                    {homeProps.map((p) => renderProp(p))}
+                  </>
+                ) : null}
+                {val > 0 ? (
+                  <>
+                    <h3 className="subtitle">Patrimoine immobilier</h3>
+                    <div className="inds big">
+                      <span className="ind"><Building2 size={18} strokeWidth={1.6} /><b>{money(val)}</b><small>valeur estimée</small></span>
+                      <span className="ind"><Landmark size={18} strokeWidth={1.6} /><b>{money(debt)}</b><small>d’hypothèques</small></span>
+                      <span className="ind"><Wallet size={18} strokeWidth={1.6} /><b>{money(val - debt)}</b><small>de fonds propres</small></span>
+                    </div>
+                  </>
+                ) : null}
+                <p className="muted small">Loyers: versements nets reçus de la régie (après ses frais de gestion), tels qu’ils arrivent sur le compte. Charges: tout ce qui est payé pour le bien, intérêts compris. Rien n’est estimé: un mois sans versement compte pour zéro. Les valeurs sont des estimations, pas des expertises.</p>
+                {bienNames.length === 0 ? <p className="muted small">Ajoute tes biens dans Documents, « Mes biens ».</p> : null}
+              </section>
+            );
+          })() : null}
         </>
       ) : null}
 

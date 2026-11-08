@@ -7,6 +7,19 @@ describe('milaView', () => {
   it('sépare ce que la famille paie et son compte, sans double compte', () => {
     const l = new Ledger(':memory:');
     init(l);
+    l.setSetting('mila.config', JSON.stringify({
+      start: '2026-08-17', siteMonth: '2026-09', openingBalance: 35.76, funding: 'transfert imhof',
+      onSite: 'ste-croi|sainte-croix|yverdon|denner satellit|coop pronto 3650|pharmacie|cpnv|centre professionnel',
+      rules: [
+        { kind: 'ecole', re: 'cpnv|cataropro', categories: ['enfants', 'quotidien'] },
+        { kind: 'ecole', re: 'payot', categories: ['enfants'] },
+        { kind: 'ecole', re: 'payot', categories: ['quotidien'], from: '2026-08-17' },
+        { kind: 'loyer', re: 'balcon du jura', categories: ['enfants'], from: '2026-08-17' },
+        { kind: 'poche', re: '^mila imhof, all', from: '2026-08-17' },
+        { kind: 'virement', re: 'transfert mila', from: '2026-08-17' },
+        { kind: 'nourriture', re: 'ste-croix|sainte-croix|yverdon', categories: ['alimentation', 'restaurants'], from: '2026-08-17' },
+      ],
+    }));
     let n = 0;
     const raw = l.raw.prepare("INSERT INTO budget_txs (id, account, date, amount, currency, label, category, source, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'test', '2026-11-08')");
     const ins = { run: (...a: (string | number)[]) => raw.run(String(n++), ...a) };
@@ -30,7 +43,7 @@ describe('milaView', () => {
     acc.run('4', '2026-09-11', -20, 'Burger King Lausanne');
     acc.run('6', '2026-09-13', -6, 'Pharmacie Sun Store 1210');
     acc.run('5', '2026-09-12', 10, 'Crédit TWINT Cavin, Ana');
-    const v = milaView(l, new Date('2026-11-08'));
+    const v = milaView(l, new Date('2026-11-08'))!;
     const fam = Object.fromEntries(v.famille.couts.map((x) => [x.key, x.total]));
     // Avant le 17 août: seul le CPNV compte (fournitures); ni loyer, ni repas, ni Payot Lausanne.
     expect(fam).toEqual({ loyer: 450, ecole: 444.96, nourriture: 8 });
@@ -42,5 +55,10 @@ describe('milaView', () => {
     expect(v.compte?.hors).toBe(20);
     expect(v.compte?.solde).toBe(35.76 + 50 + 500 - 30 - 20 + 10 - 6);
     expect(v.cout.total).toBe(902.96 + 36);
+  });
+
+  it('n’existe pas sans réglage', () => {
+    const l = new Ledger(':memory:');
+    expect(milaView(l)).toBeNull();
   });
 });
