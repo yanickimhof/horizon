@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
-import { CircleCheck, Eye, Hourglass, Info, LayoutDashboard, EyeOff, Sunrise, Wallet, FlaskConical, FolderUp, List, MessageCircle, Palette, ShieldCheck, Target, UserRound } from 'lucide-react';
+import { Building2, CircleCheck, Ellipsis, Eye, Gauge, Hourglass, Info, LayoutDashboard, EyeOff, Sunrise, Wallet, FlaskConical, FolderUp, List, MessageCircle, Palette, ShieldCheck, Target, UserRound } from 'lucide-react';
 import { api, setActiveCase, type CaseId, type Db, type State } from './api';
 import { PALETTES, paletteCss } from './palettes';
 import { Logo } from './components/Logo';
 import { Accueil } from './views/Accueil';
 import { Budget } from './views/Budget';
+import { Tresorerie } from './views/Tresorerie';
+import { Biens } from './views/Biens';
 import { Horizons } from './views/Horizons';
 import { Summary } from './views/Summary';
 import { Retraite } from './views/Retraite';
@@ -15,7 +17,7 @@ import { Coach } from './views/Coach';
 import { Privacy } from './views/Privacy';
 import { About } from './views/About';
 
-type Tab = 'budget' | 'accueil' | 'horizons' | 'retraite' | 'summary' | 'inbox' | 'data' | 'import' | 'coach' | 'privacy' | 'about';
+type Tab = 'budget' | 'tresorerie' | 'biens' | 'accueil' | 'horizons' | 'retraite' | 'summary' | 'inbox' | 'data' | 'import' | 'coach' | 'privacy' | 'about';
 
 const read = <T extends string>(k: string, d: T): T => {
   try {
@@ -38,7 +40,8 @@ export function App() {
   const [db, setDb] = useState<Db>(read('horizon.db', 'demo'));
   const [palette, setPalette] = useState<string>(read('horizon.palette', 'ocean'));
   const [caseId, setCaseId] = useState<CaseId>('base');
-  const [hidden, setHiddenState] = useState<string[]>(() => { try { return JSON.parse(read('horizon.hidden', '["horizons","summary","accueil","retraite"]')) as string[]; } catch { return []; } });
+  const [hidden, setHiddenState] = useState<string[]>(() => { try { return JSON.parse(read('horizon.hidden', '[]')) as string[]; } catch { return []; } });
+  const [moreOpen, setMoreOpen] = useState(false);
   const [home, setHomeState] = useState<Tab>(read('horizon.home', 'budget'));
   const setHidden = (h: string[]) => { write('horizon.hidden', JSON.stringify(h)); setHiddenState(h); };
   const setHome = (h: Tab) => { write('horizon.home', h); setHomeState(h); };
@@ -85,6 +88,8 @@ export function App() {
 
   const tabs: { id: Tab; label: string; icon: ReactElement; badge?: number }[] = [
     { id: 'budget', label: 'Budget', icon: <Wallet {...ICON} /> },
+    { id: 'tresorerie', label: 'Trésorerie', icon: <Gauge {...ICON} /> },
+    { id: 'biens', label: 'Biens', icon: <Building2 {...ICON} /> },
     { id: 'accueil', label: 'Retraite', icon: <Sunrise {...ICON} /> },
     { id: 'horizons', label: 'Horizons', icon: <Target {...ICON} /> },
     { id: 'retraite', label: 'Scénarios', icon: <Hourglass {...ICON} /> },
@@ -97,8 +102,10 @@ export function App() {
     { id: 'about', label: 'À propos', icon: <Info {...ICON} /> },
   ];
 
-  // « À valider » n'apparaît que s'il y a quelque chose à valider; Budget, Données et Coach restent toujours visibles.
-  const shown = tabs.filter((x) => (x.id === 'inbox' ? (x.badge ?? 0) > 0 || x.id === tab : !hidden.includes(x.id) || x.id === tab || x.id === 'coach'));
+  // Barre principale: l'essentiel. Le reste vit dans le menu « Plus ». « À valider » n'apparaît que s'il y a quelque chose à valider.
+  const MORE: Tab[] = ['horizons', 'retraite', 'data', 'import', 'privacy', 'about'];
+  const shown = tabs.filter((x) => !MORE.includes(x.id) && (x.id === 'inbox' ? (x.badge ?? 0) > 0 || x.id === tab : !hidden.includes(x.id) || x.id === tab || x.id === 'coach'));
+  const more = tabs.filter((x) => MORE.includes(x.id));
   return (
     <div className="app">
       <style>{paletteCss()}</style>
@@ -106,11 +113,21 @@ export function App() {
         <div className="brand"><Logo size={24} /><span>Horizon</span></div>
         <nav className="seg icons" aria-label="Sections">
           {shown.map((t) => (
-            <button key={t.id} className={tab === t.id ? 'on' : ''} aria-label={t.label} title={t.label} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
+            <button key={t.id} className={tab === t.id ? 'on' : ''} aria-label={t.label} title={t.label} aria-current={tab === t.id ? 'page' : undefined} onClick={() => { setTab(t.id); setMoreOpen(false); }}>
               {t.icon}
               {t.badge ? <span className="badge" aria-label={`${t.badge} à valider`}>{t.badge}</span> : null}
             </button>
           ))}
+          <span className="pal-wrap">
+            <button className={more.some((m) => m.id === tab) ? 'on' : ''} aria-label="Plus de vues" aria-expanded={moreOpen} title="Plus de vues" onClick={() => setMoreOpen(!moreOpen)}><Ellipsis {...ICON} /></button>
+            {moreOpen && (
+              <div className="pal-pop more-pop" role="menu" aria-label="Plus de vues">
+                {more.map((m) => (
+                  <button key={m.id} role="menuitem" className={'more-opt' + (tab === m.id ? ' on' : '')} onClick={() => { setTab(m.id); setMoreOpen(false); }}>{m.icon}<span>{m.label}</span></button>
+                ))}
+              </div>
+            )}
+          </span>
         </nav>
         <div className="tools">
           {db === 'demo' ? (
@@ -147,6 +164,10 @@ export function App() {
           <Welcome act={act} switchDb={switchDb} />
         ) : tab === 'budget' ? (
           <Budget db={db} state={state} setState={setState} reveal={reveal} />
+        ) : tab === 'tresorerie' ? (
+          <Tresorerie state={state} reveal={reveal} goto={(t) => setTab(t as Tab)} />
+        ) : tab === 'biens' ? (
+          <Biens state={state} reveal={reveal} />
         ) : tab === 'accueil' ? (
           <Accueil state={state} caseId={caseId} reveal={reveal} act={act} goto={(t) => setTab(t as Tab)} />
         ) : tab === 'horizons' ? (

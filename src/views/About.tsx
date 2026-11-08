@@ -70,8 +70,8 @@ function checklist(state: State): Item[] {
 
 const VIEWS: { id: string; label: string; hint: string }[] = [
   { id: 'accueil', label: 'Retraite', hint: 'Une réponse: OK ou pas, ce qu’il te faut par mois, ce qui rentre, ce que tu as de côté' },
-  { id: 'horizons', label: 'Horizons', hint: 'Anneaux de couverture à 3 mois, 1 an, 5 ans et 20 ans' },
-  { id: 'retraite', label: 'Scénarios', hint: 'Tient-on jusqu’à 95 ans, et que change une vente ou un choc' },
+  { id: 'tresorerie', label: 'Trésorerie', hint: 'Marge mensuelle avec le revenu actuel, en trois hypothèses' },
+  { id: 'biens', label: 'Biens', hint: 'Valeur en fourchette, levier, couverture de la dette et cash-flow par bien' },
   { id: 'summary', label: 'Patrimoine', hint: 'Chiffres, composition par type, devise et pays' },
 ];
 
@@ -141,7 +141,7 @@ export function About({ state, goto, hidden, setHidden, home, setHome }: { state
               </div>
             );
           })}
-          <p className="note">Budget, Données, Importer, Coach, Confidentialité et À propos sont toujours là; « À valider » apparaît seulement quand il y a quelque chose à valider. Les vues ci-dessus sont masquées par défaut.</p>
+          <p className="note">Budget et Coach sont toujours là. Horizons, Scénarios, Données, Importer, Confidentialité et À propos se trouvent dans le menu « Plus » (trois points). « À valider » apparaît seulement quand il y a quelque chose à valider.</p>
         </div>
       </section>
 
