@@ -200,20 +200,13 @@ export interface RecurringView { avoidable: Avoidable[]; categories: CategoryMov
 
 export interface Decompte { bien: string | null; from: string; to: string; total: number; lines: { label: string; amount: number }[]; solde: number | null; paid: number; settled: string | null }
 
-export interface EnfantMonth {
-  month: string;
-  loyer: number;
-  ecole: number;
-  nourriture: number;
-  poche: number;
-  virement: number;
-}
+export interface EnfantLine { key: string; label: string; total: number; perMonth: number; count: number }
 
 export interface EnfantView {
   from: string;
-  months: EnfantMonth[];
-  surPlaceMensuel: number;
-  totalMensuel: number;
-  projection4ans: number;
-  totals: { loyer: number; ecole: number; nourriture: number; poche: number; virement: number };
+  siteFrom: string;
+  fullMonths: string[];
+  famille: { couts: EnfantLine[]; epargne: EnfantLine[]; financement: EnfantLine[]; total: number; perMonth: number };
+  compte: null | { from: string; to: string; soldeInitial: number; solde: number; entrees: EnfantLine[]; sorties: EnfantLine[]; totalEntrees: number; totalSorties: number; coutNet: number; coutNetPerMonth: number; hors: number };
+  cout: { total: number; perMonth: number };
 }
