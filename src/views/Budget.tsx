@@ -391,7 +391,6 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           {p.valeur && p.valeurLow !== null && p.valeurHigh !== null ? <li className="muted small"><span>Fourchette</span><b>{money(p.valeurLow)} à {money(p.valeurHigh)}</b></li> : null}
           {p.valeur && p.valeurNote ? <li className="muted small"><span>{p.valeurNote}</span></li> : null}
           {p.dette > 0 ? <li><span>Hypothèque{p.taux !== null ? `, taux moyen ${pctPlain(p.taux)}` : ''}</span><b>{money(p.dette)}</b></li> : null}
-          {(() => { const g = (state.budget.gerance ?? []).filter((x) => x.bien === p.bien).sort((x, y) => y.to.localeCompare(x.to))[0]; return g && p.prix ? <li className="muted small"><span>Rendement brut (loyers du décompte, annualisés, sur prix d’achat)</span><b>{pctPlain((g.loyers * 2) / p.prix)}</b></li> : null; })()}
         </ul>
         {!p.home && !p.orphan && p.moisLoyer < mois ? <p className="muted small">Loyers reçus sur {p.moisLoyer} mois seulement sur {mois}: le résultat est incomplet, rien n’est estimé.</p> : null}
         {(state.budget.gerance ?? []).filter((g) => g.bien === p.bien).sort((a, b) => b.to.localeCompare(a.to)).map((g) => {
@@ -399,7 +398,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           const gl = (label: string, v: number, cls = '') => <li className={cls} key={label}><span>{label}</span><b>{money(v)}</b></li>;
           return (
             <div className="decompte" key={g.from}>
-              <p className="muted small">Décompte de gérance {g.regie}, {dateFr(g.from)} au {dateFr(g.to)} (total sur la période, pas par mois)</p>
+              <p className="muted small">Décompte de gérance {g.regie}, {dateFr(g.from)} au {dateFr(g.to)} (référence datée, total sur la période, ne vaut pas pour la période affichée)</p>
               <ul className="mini sm">
                 {gl('Loyers payés par le locataire', g.loyers)}
                 {g.forfaits > 0 ? gl('Forfait chauffage et charges', g.forfaits) : null}
@@ -861,13 +860,26 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
             const hyp = factsDebts.map((d) => ({ key: d.key, label: String(d.data.label ?? d.key), balance: Number(d.data.balance), rate: Number(d.data.rate ?? 0), variable: !!d.data.variable, note: String(d.data.note ?? '') })).sort((p, q) => q.balance - p.balance);
             const hypTotal = hyp.reduce((t, x) => t + x.balance, 0);
             const echeance = (x: { note: string; variable: boolean; rate: number }) => (x.variable ? `SARON${x.rate > 0 ? ` ${pctPlain(x.rate)}` : ''}` : `${pctPlain(x.rate)}${/fixe jusqu/i.test(x.note) ? `, ${x.note.replace(/^fixe/i, 'fixe')}` : ''}`);
-            const gerOf = (bien: string) => [...(state.budget.gerance ?? [])].filter((g) => g.bien === bien).sort((a, b) => b.to.localeCompare(a.to))[0];
-            const brutOf = (bien: string) => { const g = gerOf(bien); return g ? ((g.loyers + g.forfaits) / 6) * (unit === 'mois' ? 1 : 12) : null; };
-            const brutTot = invProps.reduce((t, p) => t + (brutOf(p.bien) ?? 0), 0);
+            // Loyer contractuel brut: somme, pour chaque mois de la période, de chaque bail au prorata des jours couverts.
+            const bauxOf = (bien: string) => (state.budget.baux ?? []).filter((b) => b.bien === bien);
+            const brutPeriod = (bien: string) => rec.months.reduce((t, m) => {
+              const [y, mo] = m.split('-').map(Number);
+              const dim = new Date(y, mo, 0).getDate();
+              const s = Date.UTC(y, mo - 1, 1), e = Date.UTC(y, mo - 1, dim);
+              return t + bauxOf(bien).reduce((u, b) => {
+                const f = Date.parse(b.from + 'T00:00:00Z'), g = b.to ? Date.parse(b.to + 'T00:00:00Z') : Infinity;
+                const days = Math.max(0, Math.round((Math.min(e, g) - Math.max(s, f)) / 86400000) + 1);
+                return u + ((b.net + b.charges) * days) / dim;
+              }, 0);
+            }, 0);
+            const today = new Date().toISOString().slice(0, 10);
+            const brutNow = (bien: string) => bauxOf(bien).filter((x) => x.from <= today && (!x.to || x.to >= today)).reduce((t, x) => t + x.net + x.charges, 0) * (unit === 'mois' ? 1 : 12);
+            const brutTot = invProps.reduce((t, p) => t + brutPeriod(p.bien), 0);
+            const earliest = (bien: string) => bauxOf(bien).map((b) => b.from).sort()[0] ?? '';
             const line = (p: Prop, r: number) => (
               <tr key={p.bien} className={'clk' + (immoOpen === p.bien ? ' on' : '')} onClick={() => setImmoOpen(immoOpen === p.bien ? '' : p.bien)} aria-expanded={immoOpen === p.bien}>
                 <td>{p.orphan ? 'Non rattaché' : p.bien}{p.moisLoyer < mois && !p.orphan && !p.home ? <small>versements sur {p.moisLoyer} mois sur {mois}</small> : null}</td>
-                <td>{brutOf(p.bien) !== null ? money(brutOf(p.bien) as number) : ''}</td>
+                <td>{!p.home && bauxOf(p.bien).length > 0 ? money(sc(brutPeriod(p.bien))) : ''}{!p.home && bauxOf(p.bien).length > 0 && Math.abs(brutNow(p.bien) - sc(brutPeriod(p.bien))) >= 1 ? <small>aujourd’hui {money(brutNow(p.bien))}</small> : null}{!p.home && bauxOf(p.bien).length > 0 && rec.months[0] && rec.months[0] + '-01' < earliest(p.bien) ? <small>baux connus dès {dateFr(earliest(p.bien))}</small> : null}</td>
                 <td>{p.home ? '' : money(sc(p.loyers))}</td>
                 <td>{money(sc(p.charges))}</td>
                 <td className={p.home ? '' : r >= 0 ? 'pos' : 'neg'}>{p.home ? '' : money(sc(r))}{!p.home && p.amort > 0 ? <small>après capital {money(sc(r - p.amort))}</small> : null}</td>
@@ -877,10 +889,10 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
               <section className="immo">
                 <p className="muted small">{unit === 'mois' ? 'Par mois' : 'Par an'}, au rythme de {periodLabel}. Touche un bien pour voir d’où viennent les montants.</p>
                 <table className="cmp immotbl">
-                  <thead><tr><th>Bien</th><th>Loyer du locataire<small>décompte H2 2025</small></th><th>Versé par la régie</th><th>Payé par toi</th><th>Résultat</th></tr></thead>
+                  <thead><tr><th>Bien</th><th>Loyer contractuel<small>brut, selon les baux</small></th><th>Versé par la régie</th><th>Payé par toi</th><th>Résultat</th></tr></thead>
                   <tbody>
                     {invProps.map((p) => line(p, p.loyers - p.charges))}
-                    <tr className="tot"><td>Investissements</td><td>{brutTot > 0 ? money(brutTot) : ''}</td><td>{money(sc(loyers))}</td><td>{money(sc(charges))}</td><td className={res >= 0 ? 'pos' : 'neg'}>{money(sc(res))}{amort > 0 ? <small>après capital {money(sc(res - amort))}</small> : null}</td></tr>
+                    <tr className="tot"><td>Investissements</td><td>{brutTot > 0 ? money(sc(brutTot)) : ''}</td><td>{money(sc(loyers))}</td><td>{money(sc(charges))}</td><td className={res >= 0 ? 'pos' : 'neg'}>{money(sc(res))}{amort > 0 ? <small>après capital {money(sc(res - amort))}</small> : null}</td></tr>
                     {homeProps.map((p) => line(p, 0))}
                   </tbody>
                 </table>
@@ -898,7 +910,7 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
                     </table>
                   </>
                 ) : null}
-                <p className="muted small">Loyer du locataire: loyer et forfait de charges encaissés par la régie, tirés de son décompte de gérance. Versé par la régie: ce qui arrive sur ton compte, après ses retenues (charges PPE, honoraires, impôts fonciers, entretien). Payé par toi: intérêts, travaux et charges réglées directement. Rien n’est estimé: un mois sans versement compte pour zéro.</p>
+                <p className="muted small">Loyer contractuel: loyer et forfait de charges prévus par les baux, mois par mois, vacances comprises. Versé par la régie: ce qui arrive réellement sur ton compte, après ses retenues (charges PPE, honoraires, impôts fonciers, entretien). Le détail brut → net n’est disponible qu’à titre de référence, pour la période du dernier décompte reçu (second semestre 2025). Payé par toi: intérêts, travaux et charges réglées directement. Rien n’est estimé: un mois sans versement compte pour zéro.</p>
                 {bienNames.length === 0 ? <p className="muted small">Ajoute tes biens dans Documents, « Mes biens ».</p> : null}
               </section>
             );
