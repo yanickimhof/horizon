@@ -2,7 +2,7 @@ import type { Ledger } from './ledger';
 import { getTerms, setTerms } from './egress';
 import { maskedTextOf, scanDirectories, type ManifestEntry } from './intake';
 import { extractFacts } from './extract';
-import { extractTransactions, looksLikeStatement } from './tx-extract';
+import { DECOMPTE_NOTE, extractTransactions, looksLikeStatement } from './tx-extract';
 import { isVisecaBill, parseVisecaBill } from './viseca';
 import { parseStatement } from './statements';
 import { storeStatements } from './budget';
@@ -203,7 +203,7 @@ export async function runWatch(l: Ledger, opts: { extract?: boolean } = {}): Pro
             markProcessed(l, m.sha256);
           }
           // Aucune ligne reconnue: résultat définitif, le document n'est plus renvoyé au modèle (sinon il l'était à chaque lecture).
-          if (r.note === 'Aucune ligne reconnue.') markProcessed(l, m.sha256);
+          if (r.note === 'Aucune ligne reconnue.' || r.note === DECOMPTE_NOTE) markProcessed(l, m.sha256);
           if (r.note) status.notes.push(`${m.path}: ${r.note}`);
         }
       }
