@@ -361,3 +361,15 @@ table.cmp tr.tot td { font-weight: 500; }
 .tlcap b.avg { width: 12px; height: 0; border-top: 2px dashed color-mix(in srgb, var(--ink) 55%, transparent); background: none; }
 .tlmonths { margin-top: 4px; }
 .tlmonths, .tlbars { gap: 4px; }
+
+/* Graphique lissé, bascule texte, palette suivie (2026-11-08) */
+.budget { --k1: var(--c-cash, #3f6fb5); --k2: var(--c-securities, #2a9d8f); --k3: var(--c-real_estate, #d9a21b); --k4: var(--c-pension, #e07a3f); }
+.tllabel .seg { margin-left: auto; }
+.tlroll { margin-top: 14px; }
+.tlroll svg { width: 100%; height: 90px; display: block; margin-top: 6px; }
+.tlroll .rg { stroke: var(--pos); stroke-width: 2; }
+.tlroll .rd { stroke: var(--k1); stroke-width: 2; }
+.tlroll .rarea { fill: color-mix(in srgb, var(--ink) 7%, transparent); }
+.tllabel .seg button { padding: 4px 10px; border-radius: 7px; background: none; font-size: 12px; margin: 0; }
+.tllabel .seg button.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+.tlread span.pos strong, .tlroll .tlread span.pos strong { color: var(--pos); }

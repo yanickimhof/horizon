@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type PointerEvent as RPointerEvent, type ReactElement } from 'react';
-import { ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowUpRight, Building2, Calendar, CalendarRange, FolderOpen, Home, Landmark, LayoutGrid, Repeat, ShoppingBasket, TrendingUp, Wallet, Zap } from 'lucide-react';
+import { ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowUpRight, Building2, FolderOpen, Home, Landmark, LayoutGrid, Repeat, ShoppingBasket, TrendingUp, Wallet, Zap } from 'lucide-react';
 import { api, fmt, type Db, type RecurringView, type State, type WatchStatus } from '../api';
 import '../budget.css';
 
@@ -474,9 +474,8 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
           <polyline points={tl.map((_, i) => `${((i + 0.5) / tl.length) * 100},${100 - (avg3[i] / axTop) * 100}`).join(' ')} fill="none" vectorEffect="non-scaling-stroke" />
         </svg>
         {tl.map((m, i) => {
-          const over = m.spend > m.income && m.income > 0;
           return (
-            <button key={m.month} className={(shownMonths.has(m.month) ? 'on' : '') + (over ? ' over' : '') + (m.spend === 0 && m.income === 0 ? ' none' : '') + (hov === i ? ' hov' : '')} onClick={(e) => { if (e.detail === 0) setSpan(period === m.month ? '12' : m.month); }} onPointerEnter={() => setHov(i)} onPointerLeave={() => setHov(null)} title={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-label={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-pressed={shownMonths.has(m.month)}>
+            <button key={m.month} className={(shownMonths.has(m.month) ? 'on' : '') + (m.spend === 0 && m.income === 0 ? ' none' : '') + (hov === i ? ' hov' : '')} onClick={(e) => { if (e.detail === 0) setSpan(period === m.month ? '12' : m.month); }} onPointerEnter={() => setHov(i)} onPointerLeave={() => setHov(null)} title={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-label={`${monthName(m.month)}: gains ${money(m.income)}, dépenses ${money(m.spend)}`} aria-pressed={shownMonths.has(m.month)}>
               <i className="dep" style={{ height: `${Math.max(m.spend === 0 ? 0 : 2, (m.spend / axTop) * 100)}%` }} />
               <i className="tick" style={{ bottom: `${Math.min(99, (m.income / axTop) * 100)}%` }} />
             </button>
@@ -488,9 +487,9 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
       </div>
       <div className="tllabel">
         {presets.map(([p, label]) => <button key={p} className={period === p ? 'on' : ''} onClick={() => setSpan(p)}>{label}</button>)}
-        <div className="unit" role="group" aria-label="Affichage par mois ou par année">
-          <button className={unit === 'mois' ? 'on' : ''} onClick={() => setUnit('mois')} title="Par mois" aria-label="Par mois" aria-pressed={unit === 'mois'}><Calendar size={15} strokeWidth={1.6} /></button>
-          <button className={unit === 'an' ? 'on' : ''} onClick={() => setUnit('an')} title="Par année" aria-label="Par année" aria-pressed={unit === 'an'}><CalendarRange size={15} strokeWidth={1.6} /></button>
+        <div className="seg" role="group" aria-label="Affichage par mois ou par année">
+          <button className={unit === 'mois' ? 'on' : ''} onClick={() => setUnit('mois')} aria-pressed={unit === 'mois'}>Par mois</button>
+          <button className={unit === 'an' ? 'on' : ''} onClick={() => setUnit('an')} aria-pressed={unit === 'an'}>Par année</button>
         </div>
         <span>{periodLabel}</span>
       </div>
@@ -498,19 +497,54 @@ export function Budget({ db, state, setState, reveal }: { db: Db; state: State; 
         const sel = tl.filter((m) => shownMonths.has(m.month) && (m.spend > 0 || m.income > 0));
         const one = hov !== null ? tl[hov] : null;
         const n = Math.max(sel.length, 1);
-        const g = one ? one.income : sel.reduce((t, m) => t + m.income, 0) / n;
-        const d = one ? one.spend : sel.reduce((t, m) => t + m.spend, 0) / n;
+        const k = one ? 1 : unit === 'an' ? 12 : 1;
+        const g = (one ? one.income : sel.reduce((t, m) => t + m.income, 0) / n) * k;
+        const d = (one ? one.spend : sel.reduce((t, m) => t + m.spend, 0) / n) * k;
         const r = g - d;
         return (
           <p className="tlread" aria-live="polite">
-            <b>{one ? monthName(one.month) : `Moyenne mensuelle, ${periodLabel}`}</b>
+            <b>{one ? monthName(one.month) : `${unit === 'an' ? 'Rythme annuel' : 'Moyenne mensuelle'}, ${periodLabel}`}</b>
             <span>Gains <strong>{money(g)}</strong></span>
             <span>Dépenses <strong>{money(d)}</strong></span>
-            <span className={r >= 0 ? 'pos' : 'neg'}>{r >= 0 ? 'Reste' : 'Déficit'} <strong>{money(Math.abs(r))}</strong></span>
+            <span className={one ? '' : r >= 0 ? 'pos' : 'neg'}>{r >= 0 ? 'Reste' : 'Écart'} <strong>{money(Math.abs(r))}</strong></span>
           </p>
         );
       })()}
-      <p className="tlcap"><span><b className="bar" />Dépenses</span><span><b className="bar over" />Dépenses au-dessus des gains</span><span><b className="gain" />Gains</span><span><b className="avg" />Moyenne 3 mois</span><span className="hint">Glisse pour choisir une période</span></p>
+      {(() => {
+        const src = full.filter((m) => !m.partial);
+        const pts = src.map((m, i) => {
+          if (i < 11) return null;
+          const w = src.slice(i - 11, i + 1);
+          return { month: m.month, g: w.reduce((t, x) => t + x.income, 0) / 12, d: w.reduce((t, x) => t + x.spend, 0) / 12 };
+        }).filter((x): x is { month: string; g: number; d: number } => x !== null).slice(-24);
+        if (pts.length < 3) return null;
+        const k = unit === 'an' ? 12 : 1;
+        const hi = Math.max(...pts.flatMap((p) => [p.g, p.d])) * 1.08;
+        const lo = Math.min(...pts.flatMap((p) => [p.g, p.d])) * 0.9;
+        const X = (i: number) => (i / (pts.length - 1)) * 100;
+        const Y = (v: number) => 100 - ((v - lo) / (hi - lo || 1)) * 100;
+        const line = (f: (p: { g: number; d: number }) => number) => pts.map((p, i) => `${X(i)},${Y(f(p))}`).join(' ');
+        const area = `${line((p) => p.g)} ${pts.map((p, i) => `${X(pts.length - 1 - i)},${Y(pts[pts.length - 1 - i].d)}`).join(' ')}`;
+        const z = pts[pts.length - 1];
+        const rr = (z.g - z.d) * k;
+        return (
+          <div className="tlroll">
+            <p className="tlread">
+              <b>12 mois glissants, lissé</b>
+              <span>Gains <strong>{money(z.g * k)}</strong></span>
+              <span>Dépenses <strong>{money(z.d * k)}</strong></span>
+              <span className={rr >= 0 ? 'pos' : 'neg'}>{rr >= 0 ? 'Reste' : 'Écart'} <strong>{money(Math.abs(rr))}</strong></span>
+            </p>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Gains et dépenses sur 12 mois glissants">
+              <polygon points={area} className="rarea" />
+              <polyline points={line((p) => p.g)} className="rg" fill="none" vectorEffect="non-scaling-stroke" />
+              <polyline points={line((p) => p.d)} className="rd" fill="none" vectorEffect="non-scaling-stroke" />
+            </svg>
+            <p className="tlcap"><span><b className="gain" />Gains, moyenne des 12 derniers mois</span><span><b className="bar" />Dépenses, moyenne des 12 derniers mois</span><span className="hint">{monthName(pts[0].month)} à {monthName(z.month)}</span></p>
+          </div>
+        );
+      })()}
+      <p className="tlcap"><span><b className="bar" />Dépenses</span><span><b className="gain" />Gains</span><span><b className="avg" />Moyenne 3 mois</span><span className="hint">Glisse pour choisir une période</span></p>
     </div>
   );
   const Cmp = ({ now, before, goodUp = false }: { now: number | null; before: number | null; goodUp?: boolean }) => {

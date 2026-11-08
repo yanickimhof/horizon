@@ -270,3 +270,6 @@ textarea { font: inherit; color: var(--ink); background: var(--surface); border:
 .ev-icon { color: var(--ink-2); display: inline-flex; }
 
 .est-h { font-size: 12px; font-weight: 400; letter-spacing: .04em; text-transform: uppercase; color: var(--muted, #888); margin: 14px 0 6px; }
+.more-pop { min-width: 190px; }
+.more-opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; background: none; border-radius: 9px; color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
+.more-opt:hover, .more-opt.on { background: var(--track); }
