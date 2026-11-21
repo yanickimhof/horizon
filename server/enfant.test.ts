@@ -16,7 +16,7 @@ describe('enfantView', () => {
         { kind: 'ecole', re: 'payot', categories: ['quotidien'], from: '2026-08-17' },
         { kind: 'loyer', re: 'balcon du jura', categories: ['enfants'], from: '2026-08-17' },
         { kind: 'poche', re: '^camille exemple, all', from: '2026-08-17' },
-        { kind: 'virement', re: 'transfert enfant', from: '2026-08-17' },
+        { kind: 'virement', re: 'transfert camille', from: '2026-08-17' },
         { kind: 'nourriture', re: 'ste-croix|sainte-croix|yverdon', categories: ['alimentation', 'restaurants'], from: '2026-08-17' },
       ],
     }));
@@ -25,7 +25,7 @@ describe('enfantView', () => {
     const ins = { run: (...a: (string | number)[]) => raw.run(String(n++), ...a) };
     ins.run('A', '2026-09-01', -450, 'CHF', 'Fondation du Balcon du Jura', 'enfants');
     ins.run('A', '2026-07-31', -450, 'CHF', 'Fondation du Balcon du Jura', 'enfants');
-    ins.run('A', '2026-09-02', -90, 'CHF', 'Camille Exemple, Allée des des Exemples', 'famille');
+    ins.run('A', '2026-09-02', -90, 'CHF', 'Camille Exemple, Allée des Exemples 1', 'famille');
     ins.run('A', '2026-02-03', -50, 'CHF', 'Transfert Camille Exemple', 'famille');
     ins.run('A', '2026-08-17', -500, 'CHF', 'Transfert Camille Exemple Budget CPNV.', 'famille');
     ins.run('A', '2026-09-03', -50, 'CHF', 'Transfert Camille Exemple', 'doublon');
