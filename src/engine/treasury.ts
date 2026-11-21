@@ -90,7 +90,7 @@ export function treasury(snap: Snapshot, budget: BudgetLike | null, opts: { rent
       }
       const paid = [...tot.entries()].filter(([b, v]) => v.loyers > 0 && !homes.has(b.toLowerCase())).reduce((s, [, v]) => s + v.charges, 0) * (12 / full.length);
       const modelled = outs
-        .filter((e) => e.category === 'housing' && /int[ée]r[êe]ts|taxe fonci|travaux/i.test(e.label) && !/osiris|enfant/i.test(e.label))
+        .filter((e) => e.category === 'housing' && /int[ée]r[êe]ts|taxe fonci|travaux/i.test(e.label) && !/osiris/i.test(e.label))
         .reduce((s, e) => s + e.monthly * 12, 0);
       rentalGap = Math.max(0, paid - modelled);
     }
